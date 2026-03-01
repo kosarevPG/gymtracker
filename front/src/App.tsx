@@ -7,7 +7,7 @@ import {
   Cloud, CloudOff, RefreshCw
 } from 'lucide-react';
 import { getWeightInputType, calcEffectiveWeight, WEIGHT_FORMULAS, BODY_WEIGHT_DEFAULT, WEIGHT_TYPES, allows1rm } from './exerciseConfig';
-import { API_BASE_URL, AUTH_TOKEN_KEY, WORKOUT_STORAGE_KEY, EDIT_EXERCISE_DRAFT_KEY, SESSION_ID_KEY, ORDER_COUNTER_KEY, LAST_ACTIVE_KEY, sortGroups } from './constants';
+import { AUTH_TOKEN_KEY, WORKOUT_STORAGE_KEY, EDIT_EXERCISE_DRAFT_KEY, SESSION_ID_KEY, ORDER_COUNTER_KEY, LAST_ACTIVE_KEY, buildApiUrl, sortGroups } from './constants';
 import { createEmptySet, createSetFromHistory } from './utils';
 import { ScreenHeader } from './components/ScreenHeader';
 import { SetDisplayRow } from './components/SetDisplayRow';
@@ -88,7 +88,7 @@ const getToken = () => localStorage.getItem(AUTH_TOKEN_KEY) || '';
 const api = {
   request: async (endpoint: string, options: RequestInit = {}) => {
       try {
-          const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}?url=/api/${endpoint}`;
+          const url = endpoint.startsWith('http') ? endpoint : buildApiUrl(endpoint);
           const res = await fetch(url, {
               ...options,
               headers: { 'Content-Type': 'application/json', 'Authorization': getToken(), ...options.headers }
@@ -117,7 +117,7 @@ const api = {
 
   saveSet: async (data: any): Promise<{ status?: string; row_number?: number; pending_id?: string; offline?: boolean } | null> => {
       try {
-          const res = await fetch(`${API_BASE_URL}?url=/api/save_set`, {
+          const res = await fetch(buildApiUrl('save_set'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': getToken() },
               body: JSON.stringify(data)
@@ -129,7 +129,7 @@ const api = {
 
   updateSet: async (data: any): Promise<{ status?: string; pending_id?: string; offline?: boolean } | null> => {
       try {
-          const res = await fetch(`${API_BASE_URL}?url=/api/update_set`, {
+          const res = await fetch(buildApiUrl('update_set'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': getToken() },
               body: JSON.stringify(data)
@@ -146,7 +146,7 @@ const api = {
       const formData = new FormData();
       formData.append('image', file);
       try {
-          const res = await fetch(`${API_BASE_URL}?url=/api/upload_image`, {
+          const res = await fetch(buildApiUrl('upload_image'), {
               method: 'POST', headers: { 'Authorization': getToken() }, body: formData
           });
           if (!res.ok) throw new Error('Upload failed');

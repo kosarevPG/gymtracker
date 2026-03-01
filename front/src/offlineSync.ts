@@ -1,6 +1,6 @@
 // Офлайн-синхронизация: очередь операций и менеджер синхронизации
 
-import { API_BASE_URL } from './constants';
+import { buildApiUrl } from './constants';
 
 export const PENDING_QUEUE_KEY = 'gym_pending_queue';
 export const EXERCISES_CACHE_KEY = 'gym_exercises_cache';
@@ -134,7 +134,7 @@ async function executeOperation(op: PendingOperation): Promise<{ success: boolea
   };
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/${endpoints[op.type]}`, {
+    const res = await fetch(buildApiUrl(endpoints[op.type]), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(op.data)

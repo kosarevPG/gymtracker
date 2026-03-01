@@ -178,26 +178,25 @@ ROUTES = {
 
 
 def handler(event, context):
-    """
-    Точка входа Yandex Cloud Function.
-    Событие: httpMethod, url, headers, body, queryStringParameters
-    """
-    event = event or {}  # защита от пустого запроса (кнопка «Протестировать»)
+    event = event or {}
 
-    if event.get('httpMethod') == 'OPTIONS':
+    # 1. Надежно определяем метод (защита от CORS: OPTIONS без проверки пароля)
+    http_method = (event.get('httpMethod') or event.get('requestContext', {}).get('http', {}).get('method') or '').upper()
+    if http_method == 'OPTIONS':
         return {"statusCode": 200, "headers": HEADERS, "body": ""}
 
-    # Проверка секретного токена
+    # 2. Проверяем секретный токен
     headers = event.get('headers', {}) or {}
-    auth_header = headers.get('Authorization') or headers.get('authorization') or ''
+    auth_header = headers.get('Authorization') or headers.get('authorization')
     if AUTH_TOKEN and auth_header != AUTH_TOKEN:
         return {"statusCode": 403, "headers": HEADERS, "body": json.dumps({"error": "Forbidden"})}
 
+    path = event.get('url', '') or event.get('path', '')
+    if not path and event.get('queryStringParameters'):
+        path = (event.get('queryStringParameters') or {}).get('url', '') or ''
+
     try:
-        http_method = event.get('httpMethod') or event.get('requestContext', {}).get('http', {}).get('method') or 'GET'
-        path = event.get('url') or event.get('path', '') or ''
-        if not path and event.get('queryStringParameters'):
-            path = event.get('queryStringParameters', {}).get('url', '') or ''
+        http_method = http_method or 'GET'
         body = event.get('body') or ''
 
         # Парсим path: ?url=/api/global_history или path

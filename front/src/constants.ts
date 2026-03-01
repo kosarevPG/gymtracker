@@ -1,5 +1,5 @@
-// ВАЖНО: Вставьте ниже реальную ссылку на вашу Яндекс.Функцию!
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://functions.yandexcloud.net/d4errkd42gb1i7s41qsd';
+// ВАЖНО: ссылка без слэша на конце (иначе CORS).
+export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'https://functions.yandexcloud.net/d4errkd42gb1i7s41qsd').replace(/\/$/, '');
 
 export const AUTH_TOKEN_KEY = 'gym_auth_token'; // <-- Пароль для базы
 

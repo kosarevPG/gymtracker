@@ -141,6 +141,11 @@ async function executeOperation(op: PendingOperation): Promise<{ success: boolea
       body: JSON.stringify(op.data)
     });
     
+    if (res.status === 403) {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+      window.dispatchEvent(new CustomEvent('gym-unauthorized'));
+      return { success: false };
+    }
     if (!res.ok) {
       return { success: false };
     }

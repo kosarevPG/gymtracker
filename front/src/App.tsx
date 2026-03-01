@@ -85,6 +85,12 @@ interface GlobalWorkoutSession {
 
 const getToken = () => localStorage.getItem(AUTH_TOKEN_KEY) || '';
 
+/** При 403 сбрасываем токен и показываем экран входа */
+function handle403() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  window.dispatchEvent(new CustomEvent('gym-unauthorized'));
+}
+
 const api = {
   request: async (endpoint: string, options: RequestInit = {}) => {
       try {
@@ -93,6 +99,7 @@ const api = {
               ...options,
               headers: { 'Content-Type': 'application/json', 'Authorization': getToken(), ...options.headers }
           });
+          if (res.status === 403) { handle403(); return null; }
           if (!res.ok) throw new Error('API Error');
           return await res.json();
       } catch (e) { console.error(e); return null; }
@@ -122,6 +129,7 @@ const api = {
               headers: { 'Content-Type': 'application/json', 'Authorization': getToken() },
               body: JSON.stringify(data)
           });
+          if (res.status === 403) { handle403(); return null; }
           if (res.ok) return await res.json();
       } catch (e) { console.log('saveSet failed', e); }
       return { status: 'queued', pending_id: addToQueue('saveSet', data), offline: true };
@@ -134,6 +142,7 @@ const api = {
               headers: { 'Content-Type': 'application/json', 'Authorization': getToken() },
               body: JSON.stringify(data)
           });
+          if (res.status === 403) { handle403(); return null; }
           if (res.ok) return await res.json();
       } catch (e) { console.log('updateSet failed', e); }
       return { status: 'queued', pending_id: addToQueue('updateSet', data), offline: true };
@@ -149,6 +158,7 @@ const api = {
           const res = await fetch(buildApiUrl('upload_image'), {
               method: 'POST', headers: { 'Authorization': getToken() }, body: formData
           });
+          if (res.status === 403) { handle403(); return null; }
           if (!res.ok) throw new Error('Upload failed');
           return await res.json();
       } catch (e) { return null; }
@@ -1650,8 +1660,14 @@ const App = () => {
   const [newName, setNewName] = useState('');
   const [newGroup, setNewGroup] = useState('');
 
-  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem(AUTH_TOKEN_KEY));
+  const [isAuthenticated, setIsAuthenticated] = useState(!!(localStorage.getItem(AUTH_TOKEN_KEY) || '').trim());
   const [authInput, setAuthInput] = useState('');
+
+  useEffect(() => {
+    const onUnauthorized = () => setIsAuthenticated(false);
+    window.addEventListener('gym-unauthorized', onUnauthorized);
+    return () => window.removeEventListener('gym-unauthorized', onUnauthorized);
+  }, []);
 
   useEffect(() => {
     if (allExercises.length === 0) return;
@@ -1671,10 +1687,11 @@ const App = () => {
 
   useEffect(() => { initNetworkListeners(); }, []);
   useEffect(() => {
+    if (!isAuthenticated) return;
     const pingInterval = setInterval(() => { api.ping().catch(e => console.error(e)); }, 14 * 60 * 1000);
     api.ping().catch(e => console.error(e));
     return () => clearInterval(pingInterval);
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => { 
     if (isAuthenticated) {

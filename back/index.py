@@ -150,13 +150,15 @@ def api_upload_image(params, body, headers):
     return json_response({'url': ''}, 400)
 
 
-# CORS headers (для OPTIONS и ответов)
+# CORS headers (для OPTIONS и ответов). Регистр заголовков может зависеть от платформы.
 HEADERS = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
+# Ответ только для OPTIONS (без body, чтобы не путать preflight)
+OPTIONS_RESPONSE = {"statusCode": 200, "headers": HEADERS, "body": ""}
 
 # Секретный токен (из переменной окружения)
 AUTH_TOKEN = os.environ.get('AUTH_TOKEN', '')
@@ -180,15 +182,32 @@ ROUTES = {
 def handler(event, context):
     event = event or {}
 
-    # 1. Надежно определяем метод (защита от CORS: OPTIONS без проверки пароля)
-    http_method = (event.get('httpMethod') or event.get('requestContext', {}).get('http', {}).get('method') or '').upper()
-    if http_method == 'OPTIONS':
-        return {"statusCode": 200, "headers": HEADERS, "body": ""}
+    # 1. Надежно определяем метод (Yandex может отдавать httpMethod, http_method, requestContext.http.method)
+    http_method = (
+        event.get('httpMethod')
+        or event.get('http_method')
+        or (event.get('requestContext') or {}).get('http', {}).get('method')
+        or ''
+    )
+    if isinstance(http_method, str):
+        http_method = http_method.upper()
+    else:
+        http_method = 'GET'
 
-    # 2. Проверяем секретный токен
+    if http_method == 'OPTIONS':
+        return OPTIONS_RESPONSE
+
+    # 2. Проверяем секретный токен (заголовки могут быть в headers или requestContext.request.headers; ключи — с разным регистром)
     headers = event.get('headers', {}) or {}
-    auth_header = headers.get('Authorization') or headers.get('authorization')
+    if not headers and event.get('requestContext'):
+        headers = (event.get('requestContext') or {}).get('request', {}).get('headers', {}) or {}
+    # Нормализуем ключи к нижнему регистру для надёжности
+    headers_lower = {k.lower(): v for k, v in (headers or {}).items() if isinstance(v, str)}
+    auth_header = headers_lower.get('authorization', '').strip()
+    if auth_header.startswith('Bearer '):
+        auth_header = auth_header[7:].strip()
     if AUTH_TOKEN and auth_header != AUTH_TOKEN:
+        logger.info("Auth failed: token_configured=%s, header_present=%s", bool(AUTH_TOKEN), bool(auth_header))
         return {"statusCode": 403, "headers": HEADERS, "body": json.dumps({"error": "Forbidden"})}
 
     path = event.get('url', '') or event.get('path', '')

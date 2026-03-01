@@ -150,6 +150,17 @@ def api_upload_image(params, body, headers):
     return json_response({'url': ''}, 400)
 
 
+# CORS headers (для OPTIONS и ответов)
+HEADERS = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+# Секретный токен (из переменной окружения)
+AUTH_TOKEN = os.environ.get('AUTH_TOKEN', '')
+
 # Маршрутизатор
 ROUTES = {
     'init': ('GET', api_init),
@@ -169,20 +180,35 @@ ROUTES = {
 def handler(event, context):
     """
     Точка входа Yandex Cloud Function.
-    Событие: http_method, url, headers, body
+    Событие: httpMethod, url, headers, body, queryStringParameters
     """
-    event = event or {}  # защита от пустого запроса
+    event = event or {}  # защита от пустого запроса (кнопка «Протестировать»)
+
+    if event.get('httpMethod') == 'OPTIONS':
+        return {"statusCode": 200, "headers": HEADERS, "body": ""}
+
+    # Проверка секретного токена
+    headers = event.get('headers', {}) or {}
+    auth_header = headers.get('Authorization') or headers.get('authorization') or ''
+    if AUTH_TOKEN and auth_header != AUTH_TOKEN:
+        return {"statusCode": 403, "headers": HEADERS, "body": json.dumps({"error": "Forbidden"})}
 
     try:
         http_method = event.get('httpMethod') or event.get('requestContext', {}).get('http', {}).get('method') or 'GET'
-        url_raw = event.get('url') or event.get('path', '') or ''
-        headers = event.get('headers') or {}
+        path = event.get('url') or event.get('path', '') or ''
+        if not path and event.get('queryStringParameters'):
+            path = event.get('queryStringParameters', {}).get('url', '') or ''
         body = event.get('body') or ''
 
-        # Парсим ?url=/api/global_history или path
-        parsed = urlparse(url_raw if url_raw.startswith('http') else f'http://x{url_raw}')
-        query = parse_qs(parsed.query)
-        url_param = query.get('url', [parsed.path or '/api/ping'])[0]
+        # Парсим path: ?url=/api/global_history или path
+        qs_params = event.get('queryStringParameters') or {}
+        url_param = qs_params.get('url') if isinstance(qs_params, dict) else None
+        if not url_param and path:
+            parsed = urlparse(path if path.startswith('http') else f'http://x{path}')
+            query = parse_qs(parsed.query)
+            url_param = (query.get('url') or [parsed.path or '/api/ping'])[0]
+        if not url_param:
+            url_param = '/api/ping'
 
         # /api/endpoint -> endpoint
         if '/api/' in url_param:
@@ -192,10 +218,18 @@ def handler(event, context):
 
         method, handler_fn = ROUTES.get(endpoint, (None, None))
         if not handler_fn:
-            return json_response({'error': f'Unknown endpoint: {endpoint}'}, 404)
+            return json_response({'error': f'Route not found: {endpoint}'}, 404)
 
         if method and http_method.upper() != method:
             return json_response({'error': f'Method {http_method} not allowed'}, 405)
+
+        # Нормализуем query: queryStringParameters = {k: v} -> {k: [v]} для совместимости с parse_qs
+        query = qs_params if isinstance(qs_params, dict) else {}
+        query = {k: [v] if not isinstance(v, list) else v for k, v in query.items()}
+        if path and '?' in path:
+            parsed = urlparse(path if path.startswith('http') else f'http://x{path}')
+            if parsed.query:
+                query = parse_qs(parsed.query)
 
         # Декодируем body если base64
         if isinstance(body, str) and body:

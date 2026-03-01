@@ -3,12 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="Cache-Control" content="no-cache" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>GymApp</title>
-    <!-- Скрипт Телеграма обязателен -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="GymTracker" />
+    
+    <link rel="manifest" href="/gymtracker/manifest.json" />
+    <title>GymTracker</title>
   </head>
-  <body class="bg-zinc-950">
+  <body class="bg-zinc-950 text-zinc-50 overscroll-y-none">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

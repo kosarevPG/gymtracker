@@ -7,7 +7,7 @@ import {
   Cloud, CloudOff, RefreshCw
 } from 'lucide-react';
 import { getWeightInputType, calcEffectiveWeight, WEIGHT_FORMULAS, BODY_WEIGHT_DEFAULT, WEIGHT_TYPES, allows1rm } from './exerciseConfig';
-import { API_BASE_URL, WORKOUT_STORAGE_KEY, EDIT_EXERCISE_DRAFT_KEY, SESSION_ID_KEY, ORDER_COUNTER_KEY, LAST_ACTIVE_KEY, sortGroups } from './constants';
+import { API_BASE_URL, AUTH_TOKEN_KEY, WORKOUT_STORAGE_KEY, EDIT_EXERCISE_DRAFT_KEY, SESSION_ID_KEY, ORDER_COUNTER_KEY, LAST_ACTIVE_KEY, sortGroups } from './constants';
 import { createEmptySet, createSetFromHistory } from './utils';
 import { ScreenHeader } from './components/ScreenHeader';
 import { SetDisplayRow } from './components/SetDisplayRow';
@@ -83,164 +83,92 @@ interface GlobalWorkoutSession {
 
 // --- API SERVICE (WITH OFFLINE SUPPORT) ---
 
+const getToken = () => localStorage.getItem(AUTH_TOKEN_KEY) || '';
+
 const api = {
   request: async (endpoint: string, options: RequestInit = {}) => {
       try {
-          const res = await fetch(`${API_BASE_URL}/api/${endpoint}`, {
+          const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}?url=/api/${endpoint}`;
+          const res = await fetch(url, {
               ...options,
-              headers: { 'Content-Type': 'application/json', ...options.headers }
+              headers: { 'Content-Type': 'application/json', 'Authorization': getToken(), ...options.headers }
           });
           if (!res.ok) throw new Error('API Error');
           return await res.json();
-      } catch (e) {
-          console.error(e);
-          return null;
-      }
+      } catch (e) { console.error(e); return null; }
   },
 
   getInit: async () => {
       try {
           const data = await api.request('init');
-          if (data && data.exercises) {
-              // Кэшируем данные при успешном запросе
-              cacheExercises(data);
-              return data;
-          }
-      } catch (e) {
-          console.error('getInit failed:', e);
-      }
-      // Если запрос не удался, пробуем вернуть кэш
+          if (data && data.exercises) { cacheExercises(data); return data; }
+      } catch (e) { console.error('getInit failed:', e); }
       const cached = getCachedExercises();
-      if (cached) {
-          console.log('Using cached exercises data');
-          return cached;
-      }
+      if (cached) return cached;
       return { groups: [], exercises: [] };
   },
 
-  getHistory: async (exerciseId: string) => {
-      const data = await api.request(`history?exercise_id=${exerciseId}`);
-      return data || { history: [], note: '' };
-  },
-
-  getGlobalHistory: async () => {
-      const data = await api.request('global_history');
-      return data || [];
-  },
-
-  getAnalytics: async (period: number = 14) => {
-      const params = new URLSearchParams();
-      params.set('period', period.toString());
-      const data = await api.request(`analytics?${params.toString()}`);
-      return data || null;
-  },
+  getHistory: async (exerciseId: string) => await api.request(`history?exercise_id=${exerciseId}`) || { history: [], note: '' },
+  getGlobalHistory: async () => await api.request('global_history') || [],
+  getAnalytics: async (period: number = 14) => await api.request(`analytics?period=${period}`) || null,
   
-  confirmBaseline: async (proposalId: string, action: 'CONFIRM' | 'SNOOZE' | 'DECLINE') => {
-      return await api.request('confirm_baseline', {
-          method: 'POST',
-          body: JSON.stringify({ proposalId, action })
-      });
-  },
+  confirmBaseline: async (proposalId: string, action: 'CONFIRM' | 'SNOOZE' | 'DECLINE') => 
+      await api.request('confirm_baseline', { method: 'POST', body: JSON.stringify({ proposalId, action }) }),
 
   saveSet: async (data: any): Promise<{ status?: string; row_number?: number; pending_id?: string; offline?: boolean } | null> => {
-      // Пробуем отправить на сервер
       try {
-          const res = await fetch(`${API_BASE_URL}/api/save_set`, {
+          const res = await fetch(`${API_BASE_URL}?url=/api/save_set`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Authorization': getToken() },
               body: JSON.stringify(data)
           });
-          if (res.ok) {
-              return await res.json();
-          }
-      } catch (e) {
-          console.log('saveSet failed, queuing for later:', e);
-      }
-      
-      // Если не удалось - добавляем в очередь
-      const pendingId = addToQueue('saveSet', data);
-      return { status: 'queued', pending_id: pendingId, offline: true };
+          if (res.ok) return await res.json();
+      } catch (e) { console.log('saveSet failed', e); }
+      return { status: 'queued', pending_id: addToQueue('saveSet', data), offline: true };
   },
 
   updateSet: async (data: any): Promise<{ status?: string; pending_id?: string; offline?: boolean } | null> => {
-      // Пробуем отправить на сервер
       try {
-          const res = await fetch(`${API_BASE_URL}/api/update_set`, {
+          const res = await fetch(`${API_BASE_URL}?url=/api/update_set`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'Authorization': getToken() },
               body: JSON.stringify(data)
           });
-          if (res.ok) {
-              return await res.json();
-          }
-      } catch (e) {
-          console.log('updateSet failed, queuing for later:', e);
-      }
-      
-      // Если не удалось - добавляем в очередь
-      const pendingId = addToQueue('updateSet', data);
-      return { status: 'queued', pending_id: pendingId, offline: true };
+          if (res.ok) return await res.json();
+      } catch (e) { console.log('updateSet failed', e); }
+      return { status: 'queued', pending_id: addToQueue('updateSet', data), offline: true };
   },
 
-  createExercise: async (name: string, group: string) => {
-      return await api.request('create_exercise', { 
-          method: 'POST', 
-          body: JSON.stringify({ name, group }) 
-      });
-  },
-
-  updateExercise: async (id: string, updates: Partial<Exercise>) => {
-      return await api.request('update_exercise', { 
-          method: 'POST', 
-          body: JSON.stringify({ id, updates }) 
-      });
-  },
-
-  ping: async () => {
-      return await api.request('ping');
-  },
-
+  createExercise: async (name: string, group: string) => await api.request('create_exercise', { method: 'POST', body: JSON.stringify({ name, group }) }),
+  updateExercise: async (id: string, updates: Partial<Exercise>) => await api.request('update_exercise', { method: 'POST', body: JSON.stringify({ id, updates }) }),
+  ping: async () => await api.request('ping'),
   uploadImage: async (file: File) => {
       const formData = new FormData();
       formData.append('image', file);
-      
       try {
-          const res = await fetch(`${API_BASE_URL}/api/upload_image`, {
-              method: 'POST',
-              body: formData
+          const res = await fetch(`${API_BASE_URL}?url=/api/upload_image`, {
+              method: 'POST', headers: { 'Authorization': getToken() }, body: formData
           });
           if (!res.ok) throw new Error('Upload failed');
           return await res.json();
-      } catch (e) {
-          console.error('Image upload error:', e);
-          return null;
-      }
+      } catch (e) { return null; }
   }
 };
 
 // --- HOOKS ---
 
-const useTelegram = () => {
-  const tg = (window as any).Telegram?.WebApp;
-  useEffect(() => {
-    tg?.ready();
-    tg?.expand();
-    if (tg) {
-      tg.setHeaderColor('#09090b');
-      tg.setBackgroundColor('#09090b');
-      // Запрашиваем полноэкранный режим, если доступен
-      if (typeof tg.requestFullscreen === 'function') {
-        try {
-          tg.requestFullscreen();
-        } catch (e) {
-          // Игнорируем ошибки, если метод недоступен
-        }
-      }
+const useHaptics = () => {
+  const haptic = (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => {
+    if (navigator.vibrate) {
+      if (style === 'light') navigator.vibrate(10);
+      else if (style === 'medium') navigator.vibrate(20);
+      else navigator.vibrate(40);
     }
-  }, []);
-  const haptic = (style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft') => tg?.HapticFeedback?.impactOccurred(style);
-  const notify = (type: 'error' | 'success' | 'warning') => tg?.HapticFeedback?.notificationOccurred(type);
-  return { tg, haptic, notify };
+  };
+  const notify = (type: 'error' | 'success' | 'warning') => {
+    if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+  };
+  return { haptic, notify };
 };
 
 const useTimer = () => {
@@ -1700,7 +1628,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
 // --- MAIN ---
 
 const App = () => {
-  const { haptic, notify } = useTelegram();
+  const { haptic, notify } = useHaptics();
   const { incrementOrder } = useSession();
   const [screen, setScreen] = useState<Screen>('home');
   const [groups, setGroups] = useState<string[]>([]);
@@ -1712,73 +1640,48 @@ const App = () => {
   const [newName, setNewName] = useState('');
   const [newGroup, setNewGroup] = useState('');
 
-  // 1. АВТОМАТИЧЕСКОЕ ВОССТАНОВЛЕНИЕ ТРЕНИРОВКИ ПРИ СТАРТЕ
+  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem(AUTH_TOKEN_KEY));
+  const [authInput, setAuthInput] = useState('');
+
   useEffect(() => {
-    if (allExercises.length === 0) return; // Ждем, пока загрузятся все упражнения
-    
-    // Пытаемся найти сохраненную сессию
+    if (allExercises.length === 0) return;
     const saved = localStorage.getItem(WORKOUT_STORAGE_KEY);
     if (saved) {
         try {
             const session = JSON.parse(saved);
-            // Если есть активные упражнения и данные не старше 24 часов
             const isFresh = session.timestamp && (Date.now() - session.timestamp) < 86400000;
-            
             if (isFresh && session.activeExercises && session.activeExercises.length > 0) {
-                // Находим первое упражнение, чтобы открыть экран тренировки с ним
                 const exId = session.activeExercises[0];
                 const ex = allExercises.find((e: Exercise) => e.id === exId);
-                
-                if (ex) {
-                    setCurrentExercise(ex);
-                    setScreen('workout');
-                }
-            } else {
-                // Если данные устарели или пусты, очищаем
-                localStorage.removeItem(WORKOUT_STORAGE_KEY);
-            }
-        } catch {
-            localStorage.removeItem(WORKOUT_STORAGE_KEY);
-        }
+                if (ex) { setCurrentExercise(ex); setScreen('workout'); }
+            } else { localStorage.removeItem(WORKOUT_STORAGE_KEY); }
+        } catch { localStorage.removeItem(WORKOUT_STORAGE_KEY); }
     }
   }, [allExercises]);
 
-  // Инициализация слушателей сети для офлайн-режима
+  useEffect(() => { initNetworkListeners(); }, []);
   useEffect(() => {
-    initNetworkListeners();
-  }, []);
-
-  // Пинг сервера каждые 14 минут, чтобы предотвратить засыпание на бесплатном тарифе Render
-  useEffect(() => {
-    const pingInterval = setInterval(() => {
-      api.ping().catch(err => {
-        console.error('Ping failed:', err);
-      });
-    }, 14 * 60 * 1000); // 14 минут = 840000 мс
-
-    // Пингуем сразу при загрузке
-    api.ping().catch(err => {
-      console.error('Initial ping failed:', err);
-    });
-
+    const pingInterval = setInterval(() => { api.ping().catch(e => console.error(e)); }, 14 * 60 * 1000);
+    api.ping().catch(e => console.error(e));
     return () => clearInterval(pingInterval);
   }, []);
 
   useEffect(() => { 
-    api.getInit().then(d => { 
-      setGroups(sortGroups(d.groups)); 
-      setAllExercises(d.exercises); 
-    }); 
-  }, []);
+    if (isAuthenticated) {
+        api.getInit().then(d => { 
+            if(d && d.groups) {
+                setGroups(sortGroups(d.groups)); 
+                setAllExercises(d.exercises); 
+            }
+        }); 
+    }
+  }, [isAuthenticated]);
 
-  // Debounce для поиска (300 мс)
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
-
   const filteredExercises = useMemo(() => {
     let list = allExercises;
     if (selectedGroup) list = list.filter(ex => ex.muscleGroup === selectedGroup);
     if (debouncedSearchQuery) list = list.filter(ex => ex.name.toLowerCase().includes(debouncedSearchQuery.toLowerCase()));
-    // Сортируем по имени (на случай, если бэкенд не отсортировал)
     return list.sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }));
   }, [allExercises, selectedGroup, debouncedSearchQuery]);
 
@@ -1789,21 +1692,37 @@ const App = () => {
   };
 
   const handleUpdate = async (id: string, updates: Partial<Exercise>) => {
-      // Обновляем локально для мгновенного отображения
       setAllExercises(p => p.map(ex => ex.id === id ? { ...ex, ...updates } : ex));
-      // Сохраняем на сервере
       const result = await api.updateExercise(id, updates);
       if (result) {
-          // Перезагружаем данные с сервера для синхронизации
           const freshData = await api.getInit();
-          if (freshData && freshData.exercises) {
-              setAllExercises(freshData.exercises);
-          }
+          if (freshData && freshData.exercises) setAllExercises(freshData.exercises);
           notify('success');
-      } else {
-          notify('error');
-      }
+      } else { notify('error'); }
   };
+
+  if (!isAuthenticated) {
+    return (
+      <div className="bg-zinc-950 min-h-screen flex items-center justify-center p-4">
+        <div className="bg-zinc-900 p-6 rounded-2xl w-full max-w-sm space-y-4">
+          <h2 className="text-xl font-bold text-zinc-50 text-center">Вход в GymTracker</h2>
+          <input 
+            type="password" 
+            placeholder="Секретный токен" 
+            value={authInput} 
+            onChange={(e: any) => setAuthInput(e.target.value)}
+            className="w-full h-12 bg-zinc-800 text-zinc-50 rounded-xl px-4 focus:outline-none focus:ring-1 focus:ring-blue-500" 
+          />
+          <button 
+            className="w-full h-12 bg-blue-600 text-white rounded-xl font-medium" 
+            onClick={() => {
+              localStorage.setItem(AUTH_TOKEN_KEY, authInput);
+              setIsAuthenticated(true);
+            }}>Войти</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-zinc-950 min-h-screen text-zinc-50 font-sans selection:bg-blue-500/30 pt-24">

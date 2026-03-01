@@ -74,19 +74,27 @@ async def cmd_start(message: Message):
     ]])
     await message.answer("Привет! Жми кнопку, чтобы начать тренировку 👇", reply_markup=kb)
 
-def json_response(data, status=200):
-    return web.json_response(
-        data, 
-        status=status, 
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type"
-        }
-    )
+def build_cors_headers(request=None):
+    """CORS-заголовки: разрешаем Authorization, в preflight отражаем Access-Control-Request-Headers."""
+    allow_headers = "Content-Type, Authorization"
+    if request is not None:
+        requested = request.headers.get("Access-Control-Request-Headers")
+        if requested:
+            allow_headers = requested
+    return {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": allow_headers,
+    }
+
+
+def json_response(data, status=200, request=None):
+    headers = build_cors_headers(request)
+    return web.json_response(data, status=status, headers=headers)
+
 
 async def handle_options(request):
-    return json_response({"status": "ok"})
+    return json_response({"status": "ok"}, request=request)
 
 async def api_init(request):
     try:

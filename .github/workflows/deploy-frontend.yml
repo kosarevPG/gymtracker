@@ -41,7 +41,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://gym-logger-bot-y602.onrender.com' }}
+          # Бэкенд: Yandex Cloud Function. Либо секрет VITE_API_BASE_URL, либо этот URL.
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://functions.yandexcloud.net/d4errkd42gb1i7s41qsd' }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

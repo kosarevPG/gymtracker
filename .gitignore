@@ -33,6 +33,7 @@ credentials.json
 !tsconfig.node.json
 !postcss.config.js
 !tailwind.config.js
+!front/public/manifest.json
 
 # IDE
 .vscode/

@@ -171,6 +171,8 @@ def handler(event, context):
     Точка входа Yandex Cloud Function.
     Событие: http_method, url, headers, body
     """
+    event = event or {}  # защита от пустого запроса
+
     try:
         http_method = event.get('httpMethod') or event.get('requestContext', {}).get('http', {}).get('method') or 'GET'
         url_raw = event.get('url') or event.get('path', '') or ''

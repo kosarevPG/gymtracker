@@ -97,7 +97,7 @@ const api = {
           const url = endpoint.startsWith('http') ? endpoint : buildApiUrl(endpoint);
           const res = await fetch(url, {
               ...options,
-              headers: { 'Content-Type': 'application/json', 'Authorization': getToken(), ...options.headers }
+              headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken(), ...options.headers }
           });
           if (res.status === 403) { handle403(); return null; }
           if (!res.ok) throw new Error('API Error');
@@ -126,7 +126,7 @@ const api = {
       try {
           const res = await fetch(buildApiUrl('save_set'), {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': getToken() },
+              headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
               body: JSON.stringify(data)
           });
           if (res.status === 403) { handle403(); return null; }
@@ -139,7 +139,7 @@ const api = {
       try {
           const res = await fetch(buildApiUrl('update_set'), {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': getToken() },
+              headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
               body: JSON.stringify(data)
           });
           if (res.status === 403) { handle403(); return null; }
@@ -156,7 +156,7 @@ const api = {
       formData.append('image', file);
       try {
           const res = await fetch(buildApiUrl('upload_image'), {
-              method: 'POST', headers: { 'Authorization': getToken() }, body: formData
+              method: 'POST', headers: { 'X-Auth-Token': getToken() }, body: formData
           });
           if (res.status === 403) { handle403(); return null; }
           if (!res.ok) throw new Error('Upload failed');

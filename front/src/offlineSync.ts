@@ -137,7 +137,7 @@ async function executeOperation(op: PendingOperation): Promise<{ success: boolea
   try {
     const res = await fetch(buildApiUrl(endpoints[op.type]), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': token },
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
       body: JSON.stringify(op.data)
     });
     

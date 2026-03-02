@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pencil, Check } from 'lucide-react';
+import { Pencil, Check, Trash2 } from 'lucide-react';
 import { SetDisplayRow } from './SetDisplayRow';
 
 interface HistorySet {
@@ -16,14 +16,16 @@ interface HistorySetRowProps {
   set: HistorySet;
   className?: string;
   onSave: (updates: { weight: number; reps: number; rest: number }) => Promise<void>;
+  onDelete?: () => Promise<void>;
 }
 
-export function HistorySetRow({ set, className = '', onSave }: HistorySetRowProps) {
+export function HistorySetRow({ set, className = '', onSave, onDelete }: HistorySetRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [weight, setWeight] = useState(String(set.weight));
   const [reps, setReps] = useState(String(set.reps));
   const [rest, setRest] = useState(String(set.rest));
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const canEdit = !!set.id;
 
@@ -81,19 +83,42 @@ export function HistorySetRow({ set, className = '', onSave }: HistorySetRowProp
     );
   }
 
+  const handleDelete = async () => {
+    if (!onDelete || deleting) return;
+    if (!confirm('Удалить подход?')) return;
+    setDeleting(true);
+    try {
+      await onDelete();
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className={`flex items-center ${className}`}>
       <div className="flex-1 min-w-0">
         <SetDisplayRow weight={set.weight} reps={set.reps} rest={set.rest} />
       </div>
       {canEdit && (
-        <button
-          onClick={() => setIsEditing(true)}
-          className="flex-shrink-0 p-2 rounded-lg text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800 transition-colors"
-          title="Редактировать"
-        >
-          <Pencil className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <button
+            onClick={() => setIsEditing(true)}
+            className="p-2 rounded-lg text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800 transition-colors"
+            title="Редактировать"
+          >
+            <Pencil className="w-5 h-5" />
+          </button>
+          {onDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              title="Удалить"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

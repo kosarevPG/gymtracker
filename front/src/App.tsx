@@ -149,6 +149,19 @@ const api = {
       return { status: 'queued', pending_id: addToQueue('updateSet', data), offline: true };
   },
 
+  deleteSet: async (rowNumber: string): Promise<{ status?: string } | null> => {
+      try {
+          const res = await fetch(buildApiUrl('delete_set'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
+              body: JSON.stringify({ row_number: rowNumber })
+          });
+          if (res.status === 403) { handle403(); return null; }
+          if (res.ok) return await res.json();
+      } catch (e) { console.log('deleteSet failed', e); }
+      return null;
+  },
+
   createExercise: async (name: string, group: string) => await api.request('create_exercise', { method: 'POST', body: JSON.stringify({ name, group }) }),
   updateExercise: async (id: string, updates: Partial<Exercise>) => await api.request('update_exercise', { method: 'POST', body: JSON.stringify({ id, updates }) }),
   ping: async () => await api.request('ping'),
@@ -1415,6 +1428,10 @@ const HistoryScreen = ({ onBack }: any) => {
                                                                             });
                                                                             if (res?.status === 'success') refreshHistory();
                                                                         }}
+                                                                        onDelete={s.id ? async () => {
+                                                                            const res = await api.deleteSet(s.id);
+                                                                            if (res?.status === 'success') refreshHistory();
+                                                                        } : undefined}
                                                                     />
                                                                 );
                                                             })}

@@ -36,6 +36,7 @@ try:
         get_global_history,
         save_set as ydb_save_set,
         update_set as ydb_update_set,
+        delete_set as ydb_delete_set,
         create_exercise as ydb_create_exercise,
         update_exercise as ydb_update_exercise,
     )
@@ -100,6 +101,22 @@ def api_update_set(params, body, headers):
         return json_response({'status': 'success'})
     except Exception as e:
         logger.error(f"api_update_set: {e}", exc_info=True)
+        return json_response({'error': str(e)}, 500)
+
+
+def api_delete_set(params, body, headers):
+    """POST /api/delete_set"""
+    try:
+        data = json.loads(body) if body else {}
+        row_id = data.get('row_number') or data.get('id')
+        if not row_id:
+            return json_response({'error': 'Missing row_number'}, 400)
+        if HAS_YDB:
+            ok = ydb_delete_set(str(row_id))
+            return json_response({'status': 'success' if ok else 'error'})
+        return json_response({'status': 'success'})
+    except Exception as e:
+        logger.error(f"api_delete_set: {e}", exc_info=True)
         return json_response({'error': str(e)}, 500)
 
 
@@ -186,6 +203,7 @@ ROUTES = {
     'global_history': ('GET', api_global_history),
     'save_set': ('POST', api_save_set),
     'update_set': ('POST', api_update_set),
+    'delete_set': ('POST', api_delete_set),
     'create_exercise': ('POST', api_create_exercise),
     'update_exercise': ('POST', api_update_exercise),
     'ping': ('GET', api_ping),
@@ -233,6 +251,8 @@ def handler(event, context):
     try:
         http_method = http_method or 'GET'
         body = event.get('body') or ''
+        if not body and event.get('requestContext'):
+            body = (event.get('requestContext') or {}).get('request', {}).get('body') or body
 
         # Парсим path: ?url=/api/global_history или path
         qs_params = event.get('queryStringParameters') or {}

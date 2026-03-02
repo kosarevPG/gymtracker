@@ -277,6 +277,22 @@ def update_set(data: Dict) -> bool:
         return False
 
 
+def delete_set(row_id: str) -> bool:
+    """Удаляет подход по id."""
+    pool = get_pool()
+    if not pool:
+        return False
+    if not row_id:
+        return False
+    tbl = _log_table()
+    try:
+        pool.execute_with_retries(f'DELETE FROM {tbl} WHERE id = "{_esc(row_id)}";')
+        return True
+    except Exception as e:
+        logger.error(f"delete_set: {e}", exc_info=True)
+        return False
+
+
 def _log_table() -> str:
     """Таблица логов: log или workout_logs (из env)."""
     return os.environ.get('YDB_LOG_TABLE', 'log')

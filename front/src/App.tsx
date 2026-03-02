@@ -11,6 +11,7 @@ import { AUTH_TOKEN_KEY, buildApiUrl, WORKOUT_STORAGE_KEY, EDIT_EXERCISE_DRAFT_K
 import { createEmptySet, createSetFromHistory } from './utils';
 import { ScreenHeader } from './components/ScreenHeader';
 import { SetDisplayRow } from './components/SetDisplayRow';
+import { HistorySetRow } from './components/HistorySetRow';
 import { ImageUploadSlot } from './components/ImageUploadSlot';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -1306,9 +1307,8 @@ const AnalyticsScreen = ({ onBack }: any) => {
 const HistoryScreen = ({ onBack }: any) => {
     const [history, setHistory] = useState<GlobalWorkoutSession[]>([]);
     const [expandedIds, setExpandedIds] = useState<string[]>([]);
-    useEffect(() => { 
-        api.getGlobalHistory().then(data => setHistory(data));
-    }, []);
+    const refreshHistory = () => api.getGlobalHistory().then(data => setHistory(data));
+    useEffect(() => { refreshHistory(); }, []);
 
     const isExpanded = (id: string) => expandedIds.includes(id);
     const allExpanded = history.length > 0 && expandedIds.length === history.length;
@@ -1398,7 +1398,24 @@ const HistoryScreen = ({ onBack }: any) => {
                                                                 const isLastSet = j === ex.sets.length - 1;
                                                                 const setBorderClass = isLastSet && !isSuperset ? '' : 'border-b border-zinc-800/50';
                                                                 return (
-                                                                    <SetDisplayRow key={j} weight={weight} reps={reps} rest={rest} className={`p-3 ${setBorderClass}`} />
+                                                                    <HistorySetRow
+                                                                        key={s.id || j}
+                                                                        set={{ id: s.id, weight, reps, rest, exerciseId: s.exerciseId, setGroupId: s.setGroupId, order: s.order }}
+                                                                        className={`p-3 ${setBorderClass}`}
+                                                                        onSave={async (updates) => {
+                                                                            const res = await api.updateSet({
+                                                                                row_number: s.id,
+                                                                                exercise_id: s.exerciseId || ex.exerciseId,
+                                                                                set_group_id: s.setGroupId || ex.setGroupId || '',
+                                                                                order: s.order ?? j,
+                                                                                weight: updates.weight,
+                                                                                input_weight: updates.weight,
+                                                                                reps: updates.reps,
+                                                                                rest: updates.rest
+                                                                            });
+                                                                            if (res?.status === 'success') refreshHistory();
+                                                                        }}
+                                                                    />
                                                                 );
                                                             })}
                                                         </div>

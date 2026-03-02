@@ -21,30 +21,34 @@ def json_response(data, status=200):
             'Content-Type': 'application/json',
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Auth-Token',
         },
         'body': body,
     }
 
 
-def get_ydb_driver():
-    """Инициализация драйвера YDB (замените на вашу конфигурацию)"""
-    try:
-        import ydb
-        endpoint = os.environ.get('YDB_ENDPOINT', '')
-        database = os.environ.get('YDB_DATABASE', '')
-        if endpoint and database:
-            return ydb.Driver(endpoint=endpoint, database=database)
-    except Exception as e:
-        logger.warning(f"YDB init: {e}")
-    return None
+# --- API handlers (YDB) ---
 
+try:
+    from ydb_store import (
+        get_all_exercises,
+        get_exercise_history,
+        get_global_history,
+        save_set as ydb_save_set,
+        update_set as ydb_update_set,
+        create_exercise as ydb_create_exercise,
+        update_exercise as ydb_update_exercise,
+    )
+    HAS_YDB = True
+except ImportError:
+    HAS_YDB = False
 
-# --- API handlers ---
 
 def api_init(params, body, headers):
     """GET /api/init — группы и упражнения"""
-    # TODO: загрузка из YDB
+    if HAS_YDB:
+        data = get_all_exercises()
+        return json_response(data)
     return json_response({'groups': [], 'exercises': []})
 
 
@@ -53,30 +57,34 @@ def api_history(params, body, headers):
     exercise_id = params.get('exercise_id', [None])[0]
     if not exercise_id:
         return json_response({'error': 'Missing exercise_id'}, 400)
-    # TODO: загрузка из YDB
+    if HAS_YDB:
+        data = get_exercise_history(exercise_id)
+        return json_response(data)
     return json_response({'history': [], 'note': ''})
 
 
 def api_global_history(params, body, headers):
     """GET /api/global_history — глобальная история тренировок"""
-    try:
-        driver = get_ydb_driver()
-        if driver:
-            # TODO: запрос к YDB для получения глобальной истории
-            # result = ... driver.table_client ...
-            pass
-        return json_response([])
-    except Exception as e:
-        logger.error(f"api_global_history: {e}", exc_info=True)
-        return json_response({'error': str(e)}, 500)
+    if HAS_YDB:
+        try:
+            data = get_global_history()
+            return json_response(data)
+        except Exception as e:
+            logger.error(f"api_global_history: {e}", exc_info=True)
+            return json_response({'error': str(e)}, 500)
+    return json_response([])
 
 
 def api_save_set(params, body, headers):
     """POST /api/save_set"""
     try:
         data = json.loads(body) if body else {}
-        # TODO: сохранение в YDB
-        return json_response({'status': 'success', 'row_number': 1})
+        if HAS_YDB:
+            result = ydb_save_set(data)
+            if result.get('status') == 'success':
+                return json_response(result)
+            return json_response({'error': result.get('error', 'Unknown')}, 500)
+        return json_response({'status': 'success', 'row_number': 0})
     except Exception as e:
         logger.error(f"api_save_set: {e}", exc_info=True)
         return json_response({'error': str(e)}, 500)
@@ -86,7 +94,9 @@ def api_update_set(params, body, headers):
     """POST /api/update_set"""
     try:
         data = json.loads(body) if body else {}
-        # TODO: обновление в YDB
+        if HAS_YDB:
+            ok = ydb_update_set(data)
+            return json_response({'status': 'success' if ok else 'error'})
         return json_response({'status': 'success'})
     except Exception as e:
         logger.error(f"api_update_set: {e}", exc_info=True)
@@ -99,7 +109,9 @@ def api_create_exercise(params, body, headers):
         data = json.loads(body) if body else {}
         if not data.get('name') or not data.get('group'):
             return json_response({'error': 'Missing name or group'}, 400)
-        # TODO: создание в YDB, вернуть созданный объект
+        if HAS_YDB:
+            ex = ydb_create_exercise(data['name'], data['group'])
+            return json_response(ex)
         return json_response({'id': 'new-id', 'name': data['name'], 'muscleGroup': data['group']})
     except Exception as e:
         logger.error(f"api_create_exercise: {e}", exc_info=True)
@@ -110,9 +122,13 @@ def api_update_exercise(params, body, headers):
     """POST /api/update_exercise"""
     try:
         data = json.loads(body) if body else {}
-        if not data.get('id'):
+        ex_id = data.get('id')
+        if not ex_id:
             return json_response({'error': 'Missing id'}, 400)
-        # TODO: обновление в YDB
+        updates = data.get('updates', data)
+        if HAS_YDB:
+            ok = ydb_update_exercise(ex_id, updates)
+            return json_response({'status': 'success' if ok else 'error'})
         return json_response({'status': 'success'})
     except Exception as e:
         logger.error(f"api_update_exercise: {e}", exc_info=True)
@@ -128,7 +144,7 @@ def api_analytics(params, body, headers):
     """GET /api/analytics?period=14"""
     period = int(params.get('period', [14])[0])
     # TODO: аналитика из YDB
-    return json_response(None)
+    return json_response({'proposals': [], 'baseline': {}})
 
 
 def api_confirm_baseline(params, body, headers):
@@ -155,7 +171,7 @@ HEADERS = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Auth-Token',
 }
 # Ответ только для OPTIONS (без body, чтобы не путать preflight)
 OPTIONS_RESPONSE = {"statusCode": 200, "headers": HEADERS, "body": ""}
@@ -203,7 +219,7 @@ def handler(event, context):
         headers = (event.get('requestContext') or {}).get('request', {}).get('headers', {}) or {}
     # Нормализуем ключи к нижнему регистру для надёжности
     headers_lower = {k.lower(): v for k, v in (headers or {}).items() if isinstance(v, str)}
-    auth_header = headers_lower.get('authorization', '').strip()
+    auth_header = (headers_lower.get('x-auth-token') or headers_lower.get('authorization') or '').strip()
     if auth_header.startswith('Bearer '):
         auth_header = auth_header[7:].strip()
     if AUTH_TOKEN and auth_header != AUTH_TOKEN:

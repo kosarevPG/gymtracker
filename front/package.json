@@ -6,7 +6,8 @@
       "scripts": {
             "dev": "vite",
             "build": "tsc && vite build",
-            "preview": "vite preview"
+            "preview": "vite preview",
+            "deploy": "npm run build && gh-pages -d dist -r https://github.com/kosarevPG/gymtracker.git"
       },
       "dependencies": {
             "clsx": "^2.1.0",
@@ -21,6 +22,7 @@
             "@types/react-dom": "^18.2.0",
             "@vitejs/plugin-react": "^4.2.0",
             "autoprefixer": "^10.4.0",
+            "gh-pages": "^6.3.0",
             "postcss": "^8.4.0",
             "tailwindcss": "^3.4.0",
             "typescript": "^5.2.0",

@@ -457,7 +457,7 @@ const HistoryListModal = ({ isOpen, onClose, history, exerciseName }: any) => {
                         const isLastExercise = exIdx === group.exercises.length - 1;
                         const borderClass = isLastSet && isLastExercise ? '' : 'border-b border-zinc-800/50';
                         return (
-                          <SetDisplayRow key={setIdx} weight={set.weight} reps={set.reps} rest={set.rest} className={`p-3 border-l-2 border-l-blue-500 bg-blue-500/5 ${borderClass}`} />
+                          <SetDisplayRow key={setIdx} weight={set.weight} reps={set.reps} rest={set.rest} className={`py-2 px-3 border-l-2 border-l-blue-500 bg-blue-500/5 ${borderClass}`} />
                         );
                       })}
                     </div>
@@ -477,7 +477,7 @@ const HistoryListModal = ({ isOpen, onClose, history, exerciseName }: any) => {
                   {group.sets.map((set: any, setIdx: number) => {
                     const isLastSet = setIdx === group.sets.length - 1;
                     return (
-                      <SetDisplayRow key={setIdx} weight={set.weight} reps={set.reps} rest={set.rest} className={`p-3 ${isLastSet ? '' : 'border-b border-zinc-800/50'}`} />
+                      <SetDisplayRow key={setIdx} weight={set.weight} reps={set.reps} rest={set.rest} className={`py-2 px-3 ${isLastSet ? '' : 'border-b border-zinc-800/50'}`} />
                     );
                   })}
                 </div>
@@ -1351,10 +1351,9 @@ const HistoryScreen = ({ onBack }: any) => {
                     <Card key={w.id} className="overflow-hidden">
                         <div onClick={() => toggleWorkout(w.id)} className="p-4 flex items-center justify-between cursor-pointer active:bg-zinc-800/50">
                             <div>
-                                <div className="flex items-center gap-2 mb-1 text-zinc-400 text-sm"><Calendar className="w-3 h-3" />{w.date}<span className="text-zinc-600">•</span>{w.duration}</div>
-                                <div className="font-semibold text-zinc-200">{w.muscleGroups.join(' • ')}</div>
+                                <div className="text-zinc-200 font-medium">{w.date} {w.muscleGroups.join(' · ')}</div>
                             </div>
-                            <ChevronDown className={`w-5 h-5 text-zinc-500 transition-transform ${isExpanded(w.id) ? 'rotate-180' : ''}`} />
+                            <ChevronDown className={`w-5 h-5 text-zinc-500 transition-transform flex-shrink-0 ${isExpanded(w.id) ? 'rotate-180' : ''}`} />
                         </div>
                         <AnimatePresence>
                             {isExpanded(w.id) && (
@@ -1401,7 +1400,7 @@ const HistoryScreen = ({ onBack }: any) => {
                                             return (
                                                 <div key={i} className={`${paddingClass} ${borderClass} last:border-b-0`}>
                                                     {supersetIndicator}
-                                                    <div className="font-medium text-zinc-300 mb-2">{ex.name}</div>
+                                                    <div className="font-medium text-zinc-300 text-sm mb-1">{ex.name}</div>
                                                     {ex.sets && Array.isArray(ex.sets) && ex.sets.length > 0 ? (
                                                         <div className="space-y-0">
                                                             {ex.sets.map((s: any, j: number) => {
@@ -1410,11 +1409,12 @@ const HistoryScreen = ({ onBack }: any) => {
                                                                 const rest = typeof s.rest === 'number' ? s.rest : (s.rest ? parseFloat(String(s.rest)) : 0);
                                                                 const isLastSet = j === ex.sets.length - 1;
                                                                 const setBorderClass = isLastSet && !isSuperset ? '' : 'border-b border-zinc-800/50';
-                                                                return (
+                                                                const hasId = !!s.id;
+                                                                return hasId ? (
                                                                     <HistorySetRow
                                                                         key={s.id || j}
                                                                         set={{ id: s.id, weight, reps, rest, exerciseId: s.exerciseId, setGroupId: s.setGroupId, order: s.order }}
-                                                                        className={`p-3 ${setBorderClass}`}
+                                                                        className={`py-2 px-3 ${setBorderClass}`}
                                                                         onSave={async (updates) => {
                                                                             const res = await api.updateSet({
                                                                                 row_number: s.id,
@@ -1433,6 +1433,8 @@ const HistoryScreen = ({ onBack }: any) => {
                                                                             if (res?.status === 'success') refreshHistory();
                                                                         } : undefined}
                                                                     />
+                                                                ) : (
+                                                                    <SetDisplayRow key={j} weight={weight} reps={reps} rest={rest} className={`py-2 px-3 ${setBorderClass}`} />
                                                                 );
                                                             })}
                                                         </div>

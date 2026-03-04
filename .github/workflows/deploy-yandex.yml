@@ -16,8 +16,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check credentials
+        id: creds
+        run: |
+          if [ -n "${{ secrets.YC_SA_JSON_CREDENTIALS }}" ]; then
+            echo "has_creds=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_creds=false" >> $GITHUB_OUTPUT
+            echo "::warning::Секреты не настроены. Добавьте YC_SA_JSON_CREDENTIALS и др. в Settings → Secrets → Actions. См. docs/DEPLOY_YANDEX.md"
+          fi
+
       - name: Deploy to Yandex Cloud Function
         id: deploy
+        if: steps.creds.outputs.has_creds == 'true'
         uses: yc-actions/yc-sls-function@v4
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}

@@ -6,3 +6,5 @@ export { HistoryScreen } from './HistoryScreen';
 export type { HistoryScreenProps } from './HistoryScreen';
 export { AnalyticsScreen } from './AnalyticsScreen';
 export type { AnalyticsScreenProps } from './AnalyticsScreen';
+export { SettingsScreen } from './SettingsScreen';
+export type { SettingsScreenProps } from './SettingsScreen';

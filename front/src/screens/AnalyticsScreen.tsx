@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, Activity, BarChart3 } from 'lucide-react';
+import { AlertTriangle, Activity, BarChart3, Download } from 'lucide-react';
 import { motion } from 'framer-motion';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, Button } from '../ui';
 import { ScreenHeader } from '../components/ScreenHeader';
@@ -48,8 +50,8 @@ function VolumeE1rmChart({ data }: { data: VolumeE1rmPoint[] }) {
             formatter={(value) => (value === 'volume' ? 'Тоннаж' : 'e1RM')}
             iconType="square"
           />
-          <Bar yAxisId="left" dataKey="volume" fill={CHART_COLORS.volume} fillOpacity={0.7} radius={[2, 2, 0, 0]} name="volume" />
-          <Line yAxisId="right" type="monotone" dataKey="e1rm" stroke={CHART_COLORS.e1rm} strokeWidth={2} dot={{ r: 4, fill: CHART_COLORS.e1rm }} connectNulls name="e1rm" />
+          <Bar yAxisId="left" dataKey="volume" fill={CHART_COLORS.volume} fillOpacity={0.7} radius={[2, 2, 0, 0]} name="volume" isAnimationActive={false} />
+          <Line yAxisId="right" type="monotone" dataKey="e1rm" stroke={CHART_COLORS.e1rm} strokeWidth={2} dot={{ r: 4, fill: CHART_COLORS.e1rm }} connectNulls name="e1rm" isAnimationActive={false} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -87,6 +89,25 @@ export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps
   const [selectedExerciseId, setSelectedExerciseId] = useState<string>('');
   const [volumeE1rmData, setVolumeE1rmData] = useState<VolumeE1rmPoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+      const element = document.getElementById('pdf-report-content');
+      if (!element) return;
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#09090b' });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save('GymTracker_Report.pdf');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -157,7 +178,7 @@ export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="min-h-screen bg-zinc-950">
       <div className="sticky top-0 z-30 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800">
         <ScreenHeader title="Аналитика" onBack={onBack} />
-        <div className="flex gap-2 px-4 pb-3">
+        <div className="flex gap-2 px-4 pb-2">
           {[7, 14, 28].map(p => (
             <button
               key={p}
@@ -168,6 +189,19 @@ export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps
             </button>
           ))}
         </div>
+        {!loading && !apiError && (
+          <div className="px-4 pb-3">
+            <Button
+              variant="secondary"
+              onClick={handleExportPDF}
+              disabled={isExporting}
+              className="w-full h-10 flex items-center justify-center gap-2 text-sm"
+            >
+              <Download className="w-4 h-4" />
+              {isExporting ? 'Генерация...' : 'Экспорт в PDF'}
+            </Button>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -181,7 +215,7 @@ export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps
           <Button variant="secondary" onClick={() => setRetry(r => r + 1)} className="mt-4">Повторить</Button>
         </div>
       ) : (
-        <div className="p-4 space-y-4 pb-20">
+        <div id="pdf-report-content" className="p-4 space-y-4 pb-20 bg-zinc-950">
           {data?.acwr?.status === 'danger' && (
             <div className="p-4 rounded-xl bg-red-900/40 border border-red-700 text-red-200 text-sm font-medium flex items-center gap-2">
               <Activity className="w-5 h-5 flex-shrink-0" />

@@ -1,4 +1,4 @@
-export type Screen = 'home' | 'exercises' | 'workout' | 'history' | 'analytics';
+export type Screen = 'home' | 'exercises' | 'workout' | 'history' | 'analytics' | 'settings';
 
 export interface Exercise {
   id: string;

@@ -44,6 +44,7 @@ try:
         get_volume_load,
         get_acwr,
         get_muscle_volume,
+        export_logs_csv,
     )
     HAS_YDB = True
 except ImportError:
@@ -237,6 +238,22 @@ def api_finish_session(params, body, headers):
         return json_response({'error': str(e)}, 500)
 
 
+def api_export_csv(params, body, headers):
+    """GET /api/export_csv — экспорт логов в CSV"""
+    csv_content = export_logs_csv() if HAS_YDB else ''
+    return {
+        'statusCode': 200,
+        'headers': {
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': 'attachment; filename="gymtracker_export.csv"',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Auth-Token',
+        },
+        'body': csv_content,
+    }
+
+
 # CORS headers (для OPTIONS и ответов). Регистр заголовков может зависеть от платформы.
 HEADERS = {
     'Content-Type': 'application/json',
@@ -266,6 +283,7 @@ ROUTES = {
     'upload_image': ('POST', api_upload_image),
     'start_session': ('POST', api_start_session),
     'finish_session': ('POST', api_finish_session),
+    'export_csv': ('GET', api_export_csv),
 }
 
 

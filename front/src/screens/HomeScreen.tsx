@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, ChevronRight, Dumbbell, BarChart3, History as HistoryIcon } from 'lucide-react';
+import { Search, ChevronRight, Dumbbell, BarChart3, History as HistoryIcon, Settings } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, Button, Input } from '../ui';
 
@@ -11,10 +11,20 @@ export interface HomeScreenProps {
   onAllExercises: () => void;
   onHistory: () => void;
   onAnalytics: () => void;
+  onSettings?: () => void;
 }
 
-export const HomeScreen = ({ groups, onSearch, onSelectGroup, onAllExercises, onHistory, onAnalytics, searchQuery }: HomeScreenProps) => (
-  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 space-y-6">
+export const HomeScreen = ({ groups, onSearch, onSelectGroup, onAllExercises, onHistory, onAnalytics, onSettings, searchQuery }: HomeScreenProps) => (
+  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="min-h-screen bg-zinc-950">
+    <div className="sticky top-0 z-30 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800 px-4 py-4 flex items-center justify-between">
+      <h1 className="text-xl font-bold text-zinc-50">Главная</h1>
+      {onSettings && (
+        <button onClick={onSettings} className="p-2 -mr-2 text-zinc-400 hover:text-blue-500 transition-colors" title="Настройки">
+          <Settings className="w-6 h-6" />
+        </button>
+      )}
+    </div>
+    <div className="p-4 space-y-6">
     <div className="flex items-center gap-2">
       <div className="relative flex-1">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
@@ -33,5 +43,6 @@ export const HomeScreen = ({ groups, onSearch, onSelectGroup, onAllExercises, on
       ))}
     </div>
     <Button onClick={onAllExercises} variant="secondary" className="w-full h-14 text-lg">Все упражнения</Button>
+    </div>
   </motion.div>
 );

@@ -125,5 +125,28 @@ export const api = {
       if (!res.ok) throw new Error('Upload failed');
       return await res.json();
     } catch (e) { return null; }
+  },
+
+  exportCsv: async (): Promise<boolean> => {
+    try {
+      const res = await fetch(buildApiUrl('export_csv'), {
+        method: 'GET',
+        headers: { 'X-Auth-Token': getToken() }
+      });
+      if (res.status === 403) { handle403(); return false; }
+      if (!res.ok) throw new Error('Export failed');
+      const text = await res.text();
+      const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'gymtracker_export.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+      return true;
+    } catch (e) {
+      console.error('exportCsv failed:', e);
+      return false;
+    }
   }
 };

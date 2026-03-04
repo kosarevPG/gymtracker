@@ -5,6 +5,8 @@ YDB хранилище для GymTracker.
 Для Yandex Cloud Function: YDB_METADATA_CREDENTIALS=1 или service account key.
 """
 
+import csv
+import io
 import json
 import logging
 import os
@@ -421,6 +423,47 @@ def _parse_date_val(val) -> str:
     if ',' in s:
         s = s.split(',')[0].strip()
     return s
+
+
+def export_logs_csv() -> str:
+    """Экспорт всех записей из таблицы логов в CSV. Сортировка по дате по убыванию."""
+    pool = get_pool()
+    if not pool:
+        return ''
+    tbl = _log_table()
+    date_col = _log_date_col()
+    columns = ['id', 'date', 'exercise_name', 'input_weight', 'total_weight', 'reps', 'rest', 'set_type', 'rpe', 'rir', 'is_low_confidence', 'session_id']
+    try:
+        result = pool.execute_with_retries(f"""
+            SELECT id, {date_col}, exercise_name, input_weight, total_weight, reps, rest, set_type, rpe, rir, is_low_confidence, session_id
+            FROM {tbl}
+            ORDER BY {date_col} DESC;
+        """)
+        rows = result[0].rows if result and result[0].rows else []
+        out = io.StringIO(newline='')
+        writer = csv.writer(out, delimiter=',', quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(columns)
+        for row in rows:
+            raw_date = _row_val(row, date_col, 'date', 'date_time', 'Date', 'DateTime')
+            date_val = _parse_date_val(raw_date) if raw_date else str(raw_date or '')
+            writer.writerow([
+                str(_row_val(row, 'id', 'ID') or ''),
+                date_val,
+                str(_row_val(row, 'exercise_name', 'exerciseName', 'Exercise_Name') or ''),
+                _to_float(_row_val(row, 'input_weight', 'inputWeight', 'Input_Weight')),
+                _to_float(_row_val(row, 'total_weight', 'totalWeight', 'Total_Weight')),
+                _to_int(_row_val(row, 'reps', 'Reps')),
+                _to_float(_row_val(row, 'rest', 'Rest')),
+                str(_row_val(row, 'set_type', 'setType', 'Set_Type') or ''),
+                _to_float(_row_val(row, 'rpe', 'RPE')) if _row_val(row, 'rpe', 'RPE') not in (None, '') else '',
+                _to_int(_row_val(row, 'rir', 'RIR')) if _row_val(row, 'rir', 'RIR') not in (None, '') else '',
+                bool(getattr(row, 'is_low_confidence', False)) if hasattr(row, 'is_low_confidence') else False,
+                str(_row_val(row, 'session_id', 'sessionId', 'Session_ID') or ''),
+            ])
+        return out.getvalue()
+    except Exception as e:
+        logger.error(f"export_logs_csv: {e}", exc_info=True)
+        return ''
 
 
 # --- Sessions ---

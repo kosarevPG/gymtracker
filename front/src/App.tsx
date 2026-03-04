@@ -14,7 +14,7 @@ import { subscribeToStatus, initNetworkListeners, syncAll, type SyncStatus } fro
 import { api } from './api';
 import { Card, Button, Input, Modal } from './ui';
 import type { Screen, Exercise, WorkoutSet, ExerciseSessionData } from './types';
-import { HomeScreen, ExercisesListScreen, HistoryScreen, AnalyticsScreen } from './screens';
+import { HomeScreen, ExercisesListScreen, HistoryScreen, AnalyticsScreen, SettingsScreen } from './screens';
 
 // --- HOOKS ---
 
@@ -1241,9 +1241,10 @@ const App = () => {
         <SyncStatusBadge />
       </div>
       
-      {screen === 'home' && <HomeScreen groups={groups} onSearch={(q: string) => { setSearchQuery(q); if(q) setScreen('exercises'); }} onSelectGroup={(g: string) => { setSelectedGroup(g); setScreen('exercises'); }} onAllExercises={() => { setSelectedGroup(null); setScreen('exercises'); }} onHistory={() => setScreen('history')} onAnalytics={() => setScreen('analytics')} searchQuery={searchQuery} />}
+      {screen === 'home' && <HomeScreen groups={groups} onSearch={(q: string) => { setSearchQuery(q); if(q) setScreen('exercises'); }} onSelectGroup={(g: string) => { setSelectedGroup(g); setScreen('exercises'); }} onAllExercises={() => { setSelectedGroup(null); setScreen('exercises'); }} onHistory={() => setScreen('history')} onAnalytics={() => setScreen('analytics')} onSettings={() => setScreen('settings')} searchQuery={searchQuery} />}
       {screen === 'analytics' && <AnalyticsScreen exercises={allExercises} onBack={() => setScreen('home')} />}
       {screen === 'history' && <HistoryScreen onBack={() => setScreen('home')} />}
+      {screen === 'settings' && <SettingsScreen onBack={() => setScreen('home')} />}
       {screen === 'exercises' && <ExercisesListScreen exercises={filteredExercises} allExercises={allExercises} title={selectedGroup || (searchQuery ? `Поиск: ${searchQuery}` : 'Все упражнения')} searchQuery={searchQuery} onSearch={(q: string) => setSearchQuery(q)} onBack={() => { setSearchQuery(''); setSelectedGroup(null); setScreen('home'); }} onSelectExercise={(ex: Exercise) => { haptic('light'); setCurrentExercise(ex); setScreen('workout'); }} onAddExercise={() => setIsCreateModalOpen(true)} />}
       {screen === 'workout' && currentExercise && <WorkoutScreen initialExercise={currentExercise} allExercises={allExercises} incrementOrder={incrementOrder} haptic={haptic} notify={notify} onBack={() => setScreen('exercises')} setExerciseToEdit={setExerciseToEdit} registerSessionDataUpdater={registerSessionDataUpdater} />}
       

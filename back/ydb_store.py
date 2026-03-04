@@ -456,6 +456,28 @@ def finish_session(session_id: str, srpe: float = 0, body_weight: float = 0) -> 
 
 # --- Exercise muscles (для фракционного учёта объёма) ---
 
+def _load_all_exercise_muscles() -> Dict[str, List[Dict]]:
+    """Загружает все связи exercise_id -> [{muscle_group, weight_factor}] одним запросом."""
+    pool = get_pool()
+    if not pool:
+        return {}
+    try:
+        result = pool.execute_with_retries("SELECT exercise_id, muscle_group, weight_factor FROM exercise_muscles")
+        out = {}
+        for r in (result[0].rows if result and result[0].rows else []):
+            ex_id = str(getattr(r, 'exercise_id', ''))
+            if ex_id not in out:
+                out[ex_id] = []
+            out[ex_id].append({
+                "muscle_group": str(getattr(r, 'muscle_group', 'Other')),
+                "weight_factor": _to_float(getattr(r, 'weight_factor', None), 1.0)
+            })
+        return out
+    except Exception as e:
+        logger.error(f"_load_all_exercise_muscles: {e}", exc_info=True)
+        return {}
+
+
 def get_exercise_muscles(exercise_id: str) -> List[Dict]:
     """Возвращает список muscle_group, weight_factor для упражнения."""
     pool = get_pool()
@@ -497,22 +519,19 @@ def get_volume_load(days: int = 7, exercise_id: str = None) -> float:
     date_col = _log_date_col()
     cutoff = (datetime.now(MOSCOW_TZ) - timedelta(days=days)).strftime('%Y.%m.%d')
     try:
-        where = "1 = 1"
+        where = f'{date_col} >= "{cutoff}"'
         if exercise_id:
-            where = f'exercise_id = "{_esc(exercise_id)}"'
-        q = f'SELECT {date_col}, total_weight, reps, set_type FROM {tbl} WHERE {where} LIMIT 5000;'
+            where = f'{where} AND exercise_id = "{_esc(exercise_id)}"'
+        q = f'SELECT {date_col}, total_weight, reps, set_type FROM {tbl} WHERE {where} LIMIT 3000;'
         r = pool.execute_with_retries(q)
         total = 0.0
         for row in (r[0].rows if r and r[0].rows else []):
             st = str(_row_val(row, 'set_type', 'setType') or '').lower()
             if st and st != 'working':
                 continue
-            raw_d = _row_val(row, 'date', 'date_time', 'Date', 'DateTime')
-            d = _parse_date_val(raw_d)
-            if d >= cutoff:
-                w = _to_float(_row_val(row, 'total_weight', 'totalWeight'))
-                rp = _to_int(_row_val(row, 'reps', 'Reps'))
-                total += w * rp
+            w = _to_float(_row_val(row, 'total_weight', 'totalWeight'))
+            rp = _to_int(_row_val(row, 'reps', 'Reps'))
+            total += w * rp
         return round(total, 1)
     except Exception as e:
         logger.error(f"get_volume_load: {e}", exc_info=True)
@@ -529,28 +548,22 @@ def get_muscle_volume(days: int = 7) -> Dict[str, float]:
     date_col = _log_date_col()
     cutoff = (datetime.now(MOSCOW_TZ) - timedelta(days=days)).strftime('%Y.%m.%d')
     ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
+    all_muscles = _load_all_exercise_muscles()
     muscle_vol = {}
     muscle_sets = {}
-    muscles_cache = {}
     try:
-        q = f'SELECT {date_col}, exercise_id, total_weight, reps, set_type FROM {tbl} LIMIT 5000;'
+        q = f'SELECT {date_col}, exercise_id, total_weight, reps, set_type FROM {tbl} WHERE {date_col} >= "{cutoff}" LIMIT 2000;'
         r = pool.execute_with_retries(q)
         for row in (r[0].rows if r and r[0].rows else []):
             st = str(_row_val(row, 'set_type', 'setType') or '').lower()
             if st and st != 'working':
-                continue
-            raw_d = _row_val(row, 'date', 'date_time', 'Date', 'DateTime')
-            d = _parse_date_val(raw_d)
-            if d < cutoff:
                 continue
             ex_id = _row_val(row, 'exercise_id', 'exerciseId')
             w = _to_float(_row_val(row, 'total_weight', 'totalWeight'))
             rp = _to_int(_row_val(row, 'reps', 'Reps'))
             tonnage = w * rp
 
-            if ex_id not in muscles_cache:
-                muscles_cache[ex_id] = get_exercise_muscles(ex_id)
-            muscles = muscles_cache[ex_id]
+            muscles = all_muscles.get(ex_id, [])
             if muscles:
                 for m in muscles:
                     mg = m.get('muscle_group', 'Other')
@@ -629,7 +642,7 @@ def get_exercise_history(exercise_id: str, limit: int = 50) -> Dict:
         return {"history": [], "note": ""}
 
 
-def get_global_history(limit_rows: int = 3000) -> List[Dict]:
+def get_global_history(limit_rows: int = 1500) -> List[Dict]:
     """Глобальная история тренировок по дням. Ограничение строк — защита от 504 при большом объёме данных."""
     pool = get_pool()
     if not pool:
@@ -638,7 +651,7 @@ def get_global_history(limit_rows: int = 3000) -> List[Dict]:
         tbl = _log_table()
         date_col = _log_date_col()
         result_sets = pool.execute_with_retries(f"""
-            SELECT * FROM {tbl}
+            SELECT id, {date_col}, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir FROM {tbl}
             ORDER BY {date_col} DESC
             LIMIT {limit_rows};
         """)

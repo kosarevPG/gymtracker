@@ -1,0 +1,39 @@
+name: Deploy Backend to Yandex Cloud Function
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'back/**'
+      - '.github/workflows/deploy-yandex.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Yandex Cloud Function
+        id: deploy
+        uses: yc-actions/yc-sls-function@v4
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SA_JSON_CREDENTIALS }}
+          bucket: ${{ secrets.YC_BUCKET }}
+          folder-id: ${{ secrets.YC_FOLDER_ID }}
+          function-name: ${{ secrets.YC_FUNCTION_NAME || 'gymtracker-api' }}
+          runtime: python312
+          entrypoint: index.handler
+          memory: 256Mb
+          execution-timeout: 60
+          source-root: back
+          include: |
+            index.py
+            ydb_store.py
+            requirements.txt
+          environment: |
+            YDB_ENDPOINT=${{ secrets.YDB_ENDPOINT }}
+            YDB_DATABASE=${{ secrets.YDB_DATABASE }}
+            AUTH_TOKEN=${{ secrets.AUTH_TOKEN }}

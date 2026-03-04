@@ -39,6 +39,11 @@ try:
         delete_set as ydb_delete_set,
         create_exercise as ydb_create_exercise,
         update_exercise as ydb_update_exercise,
+        start_session as ydb_start_session,
+        finish_session as ydb_finish_session,
+        get_volume_load,
+        get_acwr,
+        get_muscle_volume,
     )
     HAS_YDB = True
 except ImportError:
@@ -158,10 +163,25 @@ def api_ping(params, body, headers):
 
 
 def api_analytics(params, body, headers):
-    """GET /api/analytics?period=14"""
+    """GET /api/analytics?period=14&exercise_id=xxx"""
     period = int(params.get('period', [14])[0])
-    # TODO: аналитика из YDB
-    return json_response({'proposals': [], 'baseline': {}})
+    exercise_id = params.get('exercise_id', [None])[0]
+    if HAS_YDB:
+        try:
+            volume = get_volume_load(period, exercise_id)
+            acwr = get_acwr()
+            muscle_data = get_muscle_volume(period)
+            return json_response({
+                'proposals': [],
+                'baseline': {},
+                'volume': volume,
+                'acwr': acwr,
+                'muscleVolume': muscle_data.get('volume', {}),
+                'muscleSets': muscle_data.get('sets', {}),
+            })
+        except Exception as e:
+            logger.error(f"api_analytics: {e}", exc_info=True)
+    return json_response({'proposals': [], 'baseline': {}, 'volume': 0, 'acwr': {'status': 'optimal'}})
 
 
 def api_confirm_baseline(params, body, headers):
@@ -181,6 +201,40 @@ def api_upload_image(params, body, headers):
     """POST /api/upload_image (multipart)"""
     # TODO: загрузка в Object Storage или YDB
     return json_response({'url': ''}, 400)
+
+
+def api_start_session(params, body, headers):
+    """POST /api/start_session — body: {body_weight?: number}"""
+    try:
+        data = json.loads(body) if body else {}
+        body_weight = float(data.get('body_weight', 0))
+
+        if HAS_YDB:
+            result = ydb_start_session(body_weight)
+            return json_response(result)
+        return json_response({'session_id': '', 'date': ''})
+    except Exception as e:
+        logger.error(f"api_start_session: {e}", exc_info=True)
+        return json_response({'error': str(e)}, 500)
+
+
+def api_finish_session(params, body, headers):
+    """POST /api/finish_session — body: {session_id, srpe?: number, body_weight?: number}"""
+    try:
+        data = json.loads(body) if body else {}
+        session_id = data.get('session_id', '')
+        if not session_id:
+            return json_response({'error': 'Missing session_id'}, 400)
+        srpe = float(data.get('srpe', 0))
+        body_weight = float(data.get('body_weight', 0))
+
+        if HAS_YDB:
+            ok = ydb_finish_session(session_id, srpe, body_weight)
+            return json_response({'status': 'success' if ok else 'error'})
+        return json_response({'status': 'success'})
+    except Exception as e:
+        logger.error(f"api_finish_session: {e}", exc_info=True)
+        return json_response({'error': str(e)}, 500)
 
 
 # CORS headers (для OPTIONS и ответов). Регистр заголовков может зависеть от платформы.
@@ -210,6 +264,8 @@ ROUTES = {
     'analytics': ('GET', api_analytics),
     'confirm_baseline': ('POST', api_confirm_baseline),
     'upload_image': ('POST', api_upload_image),
+    'start_session': ('POST', api_start_session),
+    'finish_session': ('POST', api_finish_session),
 }
 
 

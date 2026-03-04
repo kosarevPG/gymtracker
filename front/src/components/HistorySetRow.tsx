@@ -10,6 +10,9 @@ interface HistorySet {
   exerciseId?: string;
   setGroupId?: string;
   order?: number;
+  set_type?: string;
+  rpe?: number;
+  rir?: number;
 }
 
 interface HistorySetRowProps {
@@ -97,7 +100,7 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
   return (
     <div className={`flex items-center ${className}`}>
       <div className="flex-1 min-w-0">
-        <SetDisplayRow weight={set.weight} reps={set.reps} rest={set.rest} />
+        <SetDisplayRow weight={set.weight} reps={set.reps} rest={set.rest} setType={set.set_type} rpe={set.rpe} rir={set.rir} />
       </div>
       {canEdit && (
         <div className="flex items-center gap-0.5 flex-shrink-0">

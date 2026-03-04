@@ -49,9 +49,11 @@ Thumbs.db
 # Build outputs
 front/dist/
 front/build/
+back/build_deploy/
 *.log
 
 # Temporary files
 *.tmp
 *.temp
+back.zip
 

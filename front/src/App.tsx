@@ -1,183 +1,20 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-  Search, ChevronRight, Plus, X, Info, 
-  Check, Trash2, StickyNote, ChevronDown, Dumbbell, Calendar, 
-  Settings, ArrowLeft, Pencil, Trophy,
-  History as HistoryIcon, Activity, Link as LinkIcon, BarChart3, AlertTriangle,
+  Search, Plus, Check, Trash2, StickyNote, ChevronDown, Calendar, 
+  ArrowLeft, Pencil, Trophy, Link as LinkIcon,
   Cloud, CloudOff, RefreshCw
 } from 'lucide-react';
 import { getWeightInputType, calcEffectiveWeight, WEIGHT_FORMULAS, BODY_WEIGHT_DEFAULT, WEIGHT_TYPES, allows1rm } from './exerciseConfig';
-import { AUTH_TOKEN_KEY, buildApiUrl, WORKOUT_STORAGE_KEY, EDIT_EXERCISE_DRAFT_KEY, SESSION_ID_KEY, ORDER_COUNTER_KEY, LAST_ACTIVE_KEY, sortGroups } from './constants';
+import { AUTH_TOKEN_KEY, WORKOUT_STORAGE_KEY, SESSION_ID_KEY, ORDER_COUNTER_KEY, LAST_ACTIVE_KEY, EDIT_EXERCISE_DRAFT_KEY, sortGroups } from './constants';
 import { createEmptySet, createSetFromHistory } from './utils';
-import { ScreenHeader } from './components/ScreenHeader';
 import { SetDisplayRow } from './components/SetDisplayRow';
-import { HistorySetRow } from './components/HistorySetRow';
 import { ImageUploadSlot } from './components/ImageUploadSlot';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  addToQueue, 
-  cacheExercises, 
-  getCachedExercises, 
-  syncAll, 
-  subscribeToStatus, 
-  initNetworkListeners,
-  type SyncStatus
-} from './offlineSync'; 
-
-// --- TYPES ---
-
-type Screen = 'home' | 'exercises' | 'workout' | 'history' | 'analytics';
-
-interface Exercise {
-  id: string;
-  name: string;
-  muscleGroup: string;
-  description?: string;
-  imageUrl?: string;
-  imageUrl2?: string;
-  equipmentType?: string;
-  weightType?: string;
-  baseWeight?: number;
-  weightMultiplier?: number;
-  /** 1RM методологически некорректен для Assisted/Bodyweight */
-  allow_1rm?: boolean;
-}
-
-interface WorkoutSet {
-  id: string;
-  weight: string;
-  reps: string;
-  rest: string;
-  completed: boolean;
-  prevWeight?: number;
-  order?: number;
-  setGroupId?: string;
-  isEditing?: boolean;
-  rowNumber?: number;
-  pendingId?: string;  // ID операции в офлайн-очереди
-  effectiveWeight?: number;  // Итоговый вес для аналитики (input * 2 + гриф и т.д.)
-}
-
-interface HistoryItem {
-  date: string;
-  weight: number;
-  reps: number;
-  rest: number;
-  order?: number;
-  setGroupId?: string | null;  // ID группы подходов (для суперсетов)
-}
-
-interface ExerciseSessionData {
-  exercise: Exercise;
-  note: string;
-  sets: WorkoutSet[];
-  history: HistoryItem[];
-}
-
-interface GlobalWorkoutSession {
-    id: string;
-    date: string;
-    muscleGroups: string[];
-    duration: string;
-    exercises: { name: string; sets: any[]; supersetId?: string }[];
-}
-
-// --- API SERVICE (WITH OFFLINE SUPPORT) ---
-
-const getToken = () => localStorage.getItem(AUTH_TOKEN_KEY) || '';
-
-/** При 403 сбрасываем токен и показываем экран входа */
-function handle403() {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  window.dispatchEvent(new CustomEvent('gym-unauthorized'));
-}
-
-const api = {
-  request: async (endpoint: string, options: RequestInit = {}) => {
-      try {
-          const url = endpoint.startsWith('http') ? endpoint : buildApiUrl(endpoint);
-          const res = await fetch(url, {
-              ...options,
-              headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken(), ...options.headers }
-          });
-          if (res.status === 403) { handle403(); return null; }
-          if (!res.ok) throw new Error('API Error');
-          return await res.json();
-      } catch (e) { console.error(e); return null; }
-  },
-
-  getInit: async () => {
-      try {
-          const data = await api.request('init');
-          if (data && data.exercises) { cacheExercises(data); return data; }
-      } catch (e) { console.error('getInit failed:', e); }
-      const cached = getCachedExercises();
-      if (cached) return cached;
-      return { groups: [], exercises: [] };
-  },
-
-  getHistory: async (exerciseId: string) => await api.request(`history?exercise_id=${exerciseId}`) || { history: [], note: '' },
-  getGlobalHistory: async () => await api.request('global_history') || [],
-  getAnalytics: async (period: number = 14) => await api.request(`analytics?period=${period}`) || null,
-  
-  confirmBaseline: async (proposalId: string, action: 'CONFIRM' | 'SNOOZE' | 'DECLINE') => 
-      await api.request('confirm_baseline', { method: 'POST', body: JSON.stringify({ proposalId, action }) }),
-
-  saveSet: async (data: any): Promise<{ status?: string; row_number?: number; pending_id?: string; offline?: boolean } | null> => {
-      try {
-          const res = await fetch(buildApiUrl('save_set'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-              body: JSON.stringify(data)
-          });
-          if (res.status === 403) { handle403(); return null; }
-          if (res.ok) return await res.json();
-      } catch (e) { console.log('saveSet failed', e); }
-      return { status: 'queued', pending_id: addToQueue('saveSet', data), offline: true };
-  },
-
-  updateSet: async (data: any): Promise<{ status?: string; pending_id?: string; offline?: boolean } | null> => {
-      try {
-          const res = await fetch(buildApiUrl('update_set'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-              body: JSON.stringify(data)
-          });
-          if (res.status === 403) { handle403(); return null; }
-          if (res.ok) return await res.json();
-      } catch (e) { console.log('updateSet failed', e); }
-      return { status: 'queued', pending_id: addToQueue('updateSet', data), offline: true };
-  },
-
-  deleteSet: async (rowNumber: string): Promise<{ status?: string } | null> => {
-      try {
-          const res = await fetch(buildApiUrl('delete_set'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-              body: JSON.stringify({ row_number: rowNumber })
-          });
-          if (res.status === 403) { handle403(); return null; }
-          if (res.ok) return await res.json();
-      } catch (e) { console.log('deleteSet failed', e); }
-      return null;
-  },
-
-  createExercise: async (name: string, group: string) => await api.request('create_exercise', { method: 'POST', body: JSON.stringify({ name, group }) }),
-  updateExercise: async (id: string, updates: Partial<Exercise>) => await api.request('update_exercise', { method: 'POST', body: JSON.stringify({ id, updates }) }),
-  ping: async () => await api.request('ping'),
-  uploadImage: async (file: File) => {
-      const formData = new FormData();
-      formData.append('image', file);
-      try {
-          const res = await fetch(buildApiUrl('upload_image'), {
-              method: 'POST', headers: { 'X-Auth-Token': getToken() }, body: formData
-          });
-          if (res.status === 403) { handle403(); return null; }
-          if (!res.ok) throw new Error('Upload failed');
-          return await res.json();
-      } catch (e) { return null; }
-  }
-};
+import { subscribeToStatus, initNetworkListeners, syncAll, type SyncStatus } from './offlineSync';
+import { api } from './api';
+import { Card, Button, Input, Modal } from './ui';
+import type { Screen, Exercise, WorkoutSet, ExerciseSessionData } from './types';
+import { HomeScreen, ExercisesListScreen, HistoryScreen, AnalyticsScreen } from './screens';
 
 // --- HOOKS ---
 
@@ -293,55 +130,6 @@ const useSession = () => {
   return { sessionId, incrementOrder };
 };
 
-// --- UI COMPONENTS ---
-
-const Card = ({ children, className = '', onClick }: any) => (
-  <div onClick={onClick} className={`bg-zinc-900 border border-zinc-800 rounded-2xl ${className}`}>
-    {children}
-  </div>
-);
-
-const Button = ({ children, variant = 'primary', className = '', onClick, icon: Icon }: any) => {
-  const variants: any = {
-    primary: "bg-blue-600 text-white shadow-lg shadow-blue-900/20 hover:bg-blue-500",
-    secondary: "bg-zinc-800 text-zinc-50 hover:bg-zinc-700",
-    ghost: "bg-transparent text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800/50",
-    danger: "bg-red-500/10 text-red-500 hover:bg-red-500/20",
-    success: "bg-green-500/10 text-green-500"
-  };
-  return (
-    <button onClick={onClick} className={`flex items-center justify-center font-medium rounded-xl transition-all active:scale-95 disabled:opacity-50 ${variants[variant]} ${className}`}>
-      {Icon && <Icon className="w-5 h-5 mr-2" />}
-      {children}
-    </button>
-  );
-};
-
-const Input = React.forwardRef<HTMLInputElement, any>((props, ref) => (
-  <input ref={ref} {...props} className={`w-full h-12 bg-zinc-900 text-zinc-50 rounded-xl px-4 focus:outline-none focus:ring-1 focus:ring-zinc-600 placeholder:text-zinc-600 transition-all ${props.className}`} />
-));
-Input.displayName = 'Input';
-
-const Modal = ({ isOpen, onClose, title, children, headerAction }: any) => (
-  <AnimatePresence>
-    {isOpen && (
-      <>
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50" />
-        <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", damping: 25, stiffness: 300 }} className="fixed bottom-4 left-0 right-0 bg-zinc-900 border-t border-zinc-800 rounded-t-3xl z-50 max-h-[85vh] flex flex-col mx-4">
-          <div className="p-4 border-b border-zinc-800 flex items-center justify-between shrink-0">
-            <h3 className="text-lg font-semibold text-zinc-50 truncate max-w-[70%]">{title}</h3>
-            <div className="flex items-center gap-2">
-                {headerAction}
-                <button onClick={onClose} className="p-2 bg-zinc-800 rounded-full text-zinc-400"><X className="w-5 h-5" /></button>
-            </div>
-          </div>
-          <div className="overflow-y-auto p-4 flex-1 pb-10">{children}</div>
-        </motion.div>
-      </>
-    )}
-  </AnimatePresence>
-);
-
 // --- SYNC STATUS COMPONENT ---
 
 const SyncStatusBadge = () => {
@@ -397,16 +185,23 @@ const SyncStatusBadge = () => {
 
 // --- FEATURES ---
 
-const TimerBlock = ({ timer, onToggle }: any) => (
-  <div className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-md pb-4 pt-2 px-4 border-b border-zinc-800/50 mb-4">
-    <Card className="flex items-center justify-between p-3 px-5 shadow-xl shadow-black/50">
-      <div className="font-mono text-3xl font-bold tracking-wider text-zinc-50 tabular-nums">{timer.formatTime(timer.time)}</div>
-      <div className="flex gap-2">
-        <Button variant={timer.isRunning ? "danger" : "primary"} onClick={onToggle} className="w-20 h-10 text-sm">{timer.isRunning ? "Стоп" : "Старт"}</Button>
-      </div>
-    </Card>
-  </div>
-);
+const TimerBlock = ({ timer, onToggle, sessionTonnage = 0 }: any) => {
+  const minutes = timer.time / 60;
+  const density = minutes > 0 ? Math.round(sessionTonnage / minutes) : 0;
+  return (
+    <div className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-md pb-4 pt-2 px-4 border-b border-zinc-800/50 mb-4">
+      <Card className="flex items-center justify-between p-3 px-5 shadow-xl shadow-black/50">
+        <div>
+          <div className="font-mono text-3xl font-bold tracking-wider text-zinc-50 tabular-nums">{timer.formatTime(timer.time)}</div>
+          {sessionTonnage > 0 && <div className="text-xs text-zinc-500 mt-1">Плотность: {density} кг/мин</div>}
+        </div>
+        <div className="flex gap-2">
+          <Button variant={timer.isRunning ? "danger" : "primary"} onClick={onToggle} className="w-20 h-10 text-sm">{timer.isRunning ? "Стоп" : "Старт"}</Button>
+        </div>
+      </Card>
+    </div>
+  );
+};
 
 const NoteWidget = ({ initialValue, onChange }: any) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -491,7 +286,10 @@ const HistoryListModal = ({ isOpen, onClose, history, exerciseName }: any) => {
   );
 };
 
-const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight, weightMultiplier, onUpdate, onDelete, onComplete, onToggleEdit }: { set: any; equipmentType?: string; weightType?: string; baseWeight?: number; weightMultiplier?: number; onUpdate: (sid: string, field: string, value: string) => void; onDelete: (sid: string) => void; onComplete: (sid: string) => void; onToggleEdit: (sid: string) => void }) => {
+const SET_TYPE_ORDER: Array<'warmup' | 'working' | 'drop' | 'failure'> = ['warmup', 'working', 'drop', 'failure'];
+const SET_TYPE_LABEL: Record<string, string> = { warmup: 'W', working: 'R', drop: 'D', failure: 'F' };
+
+const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight, weightMultiplier, onUpdate, onDelete, onComplete, onToggleEdit }: { set: any; equipmentType?: string; weightType?: string; baseWeight?: number; weightMultiplier?: number; onUpdate: (sid: string, field: string, value: string | number) => void; onDelete: (sid: string) => void; onComplete: (sid: string) => void; onToggleEdit: (sid: string) => void }) => {
   const weightType = getWeightInputType(equipmentType, weightTypeFromRef);
   const formula = WEIGHT_FORMULAS[weightType];
   const effectiveWeight = calcEffectiveWeight(set.weight || '', weightType, undefined, baseWeight, weightMultiplier);
@@ -507,6 +305,8 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
   const isEditing = set.isEditing;
   const inputDisabledClass = isCompleted && !isEditing ? 'opacity-50 pointer-events-none' : '';
   const showTotalBadge = effectiveWeight !== null && effectiveWeight !== parseFloat(set.weight || '0');
+  const currentSetType = set.setType || 'working';
+  const rirVal = set.rir !== undefined && set.rir !== '' ? Number(set.rir) : undefined;
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-start mb-3">
@@ -535,12 +335,30 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
           {showTotalBadge && effectiveWeight !== null && effectiveWeight >= 0 && (
             <span className="text-blue-400 font-medium">Итого: {effectiveWeight} кг</span>
           )}
-          {show1rm && oneRM > 0 && <span className="text-zinc-500">1PM: {oneRM}</span>}
+          {show1rm && oneRM > 0 && (
+            <span className="text-zinc-500">1PM: {oneRM}{rirVal !== undefined && rirVal >= 0 ? ` RIR${rirVal}` : ''}</span>
+          )}
           {!show1rm && (weightType === 'assisted' || weightType === 'bodyweight') && (
             <span className="text-zinc-600 text-[9px]">1RM не рассчитывается</span>
           )}
           {asi !== null && <span className="text-zinc-500">ASI: {asi}</span>}
           {set.prevWeight !== undefined && displayWeight > 0 && <span className={`${deltaColor} font-medium`}>{deltaText}</span>}
+          <button
+            type="button"
+            onClick={() => {
+              const idx = SET_TYPE_ORDER.indexOf(currentSetType);
+              const next = SET_TYPE_ORDER[(idx + 1) % 4];
+              onUpdate(set.id, 'setType', next);
+            }}
+            className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${currentSetType === 'warmup' ? 'bg-zinc-600 text-zinc-300' : currentSetType === 'working' ? 'bg-blue-600/50 text-blue-300' : currentSetType === 'drop' ? 'bg-orange-600/50 text-orange-300' : 'bg-red-600/50 text-red-300'}`}
+          >
+            {SET_TYPE_LABEL[currentSetType]}
+          </button>
+          <div className="flex gap-0.5">
+            {[0, 1, 2, 3].map(r => (
+              <button key={r} type="button" onClick={() => onUpdate(set.id, 'rir', r)} className={`px-1.5 py-0.5 rounded text-[9px] ${rirVal === r ? 'bg-zinc-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}>{r === 3 ? '3+' : r}</button>
+            ))}
+          </div>
         </div>
       </div>
       <input 
@@ -654,117 +472,7 @@ const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompl
   );
 };
 
-// --- SCREENS ---
-
-const HomeScreen = ({ groups, onSearch, onSelectGroup, onAllExercises, onHistory, onAnalytics, searchQuery }: any) => {
-  return (
-  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-4 space-y-6">
-    <div className="flex items-center gap-2">
-      <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-          <Input placeholder="Найти..." value={searchQuery || ''} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearch(e.target.value)} className="pl-12 bg-zinc-900 w-full" />
-      </div>
-      <button onClick={onAnalytics} className="p-3 bg-zinc-900 rounded-xl text-zinc-400 hover:text-blue-500"><BarChart3 className="w-6 h-6" /></button>
-      <button onClick={onHistory} className="p-3 bg-zinc-900 rounded-xl text-zinc-400 hover:text-blue-500"><HistoryIcon className="w-6 h-6" /></button>
-    </div>
-    <div className="flex flex-col space-y-2">
-      {groups.map((group: string) => (
-        <Card key={group} onClick={() => onSelectGroup(group)} className="flex items-center p-4 hover:bg-zinc-800 transition-colors active:scale-95 cursor-pointer">
-          <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center text-zinc-500 flex-shrink-0"><Dumbbell className="w-6 h-6" /></div>
-          <span className="font-medium text-zinc-200 text-lg ml-4 flex-1">{group}</span>
-          <ChevronRight className="w-6 h-6 text-zinc-600" />
-        </Card>
-      ))}
-    </div>
-    <Button onClick={onAllExercises} variant="secondary" className="w-full h-14 text-lg">Все упражнения</Button>
-  </motion.div>
-  );
-};
-
-// Мемоизированный компонент карточки упражнения
-const ExerciseCard = React.memo(({ ex, onSelectExercise, onInfoClick }: { ex: Exercise; onSelectExercise: (ex: Exercise) => void; onInfoClick: (ex: Exercise) => void }) => (
-  <div className="flex items-center p-2 rounded-2xl hover:bg-zinc-900 border border-transparent hover:border-zinc-800 transition-all">
-    <div onClick={(e) => { e.stopPropagation(); onInfoClick(ex); }} className="w-14 h-14 rounded-xl bg-zinc-800 flex-shrink-0 overflow-hidden cursor-pointer active:scale-90 transition-transform relative group">
-      {ex.imageUrl ? <img src={ex.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><Info /></div>}
-      <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Settings className="w-5 h-5 text-white" /></div>
-    </div>
-    <div onClick={() => onSelectExercise(ex)} className="flex-1 px-4 cursor-pointer">
-      <div className="font-medium text-zinc-100 text-[17px]">{ex.name}</div>
-      <div className="text-xs text-zinc-500">{ex.muscleGroup}</div>
-    </div>
-    <button onClick={() => onSelectExercise(ex)} className="p-2 text-zinc-600"><ChevronRight className="w-5 h-5" /></button>
-  </div>
-), (prevProps, nextProps) => prevProps.ex.id === nextProps.ex.id && prevProps.ex.name === nextProps.ex.name && prevProps.ex.muscleGroup === nextProps.ex.muscleGroup && prevProps.ex.imageUrl === nextProps.ex.imageUrl && prevProps.ex.imageUrl2 === nextProps.ex.imageUrl2);
-
-const ExercisesListScreen = ({ exercises, title, onBack, onSelectExercise, onAddExercise, searchQuery, onSearch, allExercises }: any) => {
-  const [infoModalExId, setInfoModalExId] = useState<string | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  
-  // Получаем актуальные данные упражнения из allExercises
-  const infoModalEx = infoModalExId ? allExercises.find((ex: Exercise) => ex.id === infoModalExId) || null : null;
-  
-  // Автофокус на поле поиска при монтировании, если есть searchQuery
-  useEffect(() => {
-    if (searchQuery && searchInputRef.current) {
-      searchInputRef.current.focus();
-      // Устанавливаем курсор в конец текста
-      const length = searchInputRef.current.value.length;
-      searchInputRef.current.setSelectionRange(length, length);
-    }
-  }, [searchQuery]);
-  
-  return (
-    <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="flex flex-col h-full">
-      <ScreenHeader
-        title={title}
-        onBack={onBack}
-        rightAction={<button onClick={onAddExercise} className="p-2 text-blue-500 hover:bg-zinc-800 rounded-full active:scale-90"><Plus className="w-7 h-7" /></button>}
-      >
-        {searchQuery ? (
-          <div className="relative flex-1">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-            <Input 
-              ref={searchInputRef}
-              placeholder="Найти..." 
-              value={searchQuery}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearch(e.target.value)} 
-              className="pl-8 bg-zinc-900 w-full h-9 text-sm" 
-            />
-          </div>
-        ) : (
-          <h1 className="text-xl font-bold truncate">{title}</h1>
-        )}
-      </ScreenHeader>
-      <div className="p-4 space-y-2 pb-24">
-        {exercises.map((ex: Exercise) => (
-          <ExerciseCard key={ex.id} ex={ex} onSelectExercise={onSelectExercise} onInfoClick={(ex: Exercise) => setInfoModalExId(ex.id)} />
-        ))}
-      </div>
-      <Modal isOpen={!!infoModalEx} onClose={() => setInfoModalExId(null)} title={infoModalEx?.name}>
-        {infoModalEx && (
-          <div className="space-y-4">
-             <div className="aspect-square bg-zinc-800 rounded-2xl overflow-hidden">
-               {infoModalEx.imageUrl ? (
-                 <img src={infoModalEx.imageUrl} className="w-full h-full object-cover" alt="Основное фото" onError={() => {}} />
-               ) : (
-                 <div className="w-full h-full flex items-center justify-center text-zinc-500">Нет фото</div>
-               )}
-             </div>
-             {infoModalEx.imageUrl2 && infoModalEx.imageUrl2.trim() !== '' ? (
-               <div className="aspect-square bg-zinc-800 rounded-2xl overflow-hidden">
-                 <img src={infoModalEx.imageUrl2} className="w-full h-full object-cover" alt="Дополнительное фото" onError={() => {}} />
-               </div>
-             ) : (
-               <div className="text-xs text-zinc-500 text-center py-2">Дополнительное фото отсутствует</div>
-             )}
-             <div className="text-zinc-400 leading-relaxed">{infoModalEx.description || 'Описание отсутствует.'}</div>
-             <div className="pt-4"><div className="text-xs text-zinc-500 uppercase font-bold tracking-wider mb-2">Группа</div><div className="px-3 py-1 bg-zinc-800 rounded-lg inline-block text-zinc-300 text-sm">{infoModalEx.muscleGroup}</div></div>
-          </div>
-        )}
-      </Modal>
-    </motion.div>
-  );
-};
+// --- SCREENS (WorkoutScreen stays here - complex with WorkoutCard, SetRow, etc.) ---
 
 const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, haptic, notify, onUpdateExercise }: any) => {
   // ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ: Проверяем наличие незавершенной тренировки
@@ -911,6 +619,11 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
         rest: parseFloat(set.rest) || 0,
         note: sessionData[exId].note,
         set_group_id: localGroupId,
+        session_id: localGroupId,
+        set_type: set.setType || 'working',
+        rpe: set.rpe != null ? Number(set.rpe) : undefined,
+        rir: set.rir != null ? Number(set.rir) : undefined,
+        is_low_confidence: set.isLowConfidence ?? false,
         order
     });
     
@@ -938,7 +651,7 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
     notify('success');
   };
 
-  const handleUpdateSet = (exId: string, setId: string, field: string, val: string) => {
+  const handleUpdateSet = (exId: string, setId: string, field: string, val: string | number) => {
     setSessionData(prev => {
       const next = { ...prev, [exId]: { ...prev[exId], sets: prev[exId].sets.map(s => s.id === setId ? { ...s, [field]: val } : s) } };
       const set = next[exId].sets.find(s => s.id === setId);
@@ -1035,14 +748,30 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
       onBack();
   };
 
+  const sessionTonnage = useMemo(() => {
+    let total = 0;
+    for (const exId of activeExercises) {
+      const data = sessionData[exId];
+      if (!data) continue;
+      const ex = data.exercise;
+      const weightType = getWeightInputType(ex?.equipmentType, ex?.weightType);
+      for (const s of data.sets || []) {
+        if (!s.completed || !s.weight || !s.reps) continue;
+        const w = calcEffectiveWeight(s.weight, weightType, undefined, ex?.baseWeight, ex?.weightMultiplier) ?? (parseFloat(s.weight) || 0);
+        total += w * (parseInt(s.reps) || 0);
+      }
+    }
+    return total;
+  }, [sessionData, activeExercises]);
+
   return (
     <div className="min-h-screen bg-zinc-950 pb-20">
-      <TimerBlock timer={timer} onToggle={() => timer.isRunning ? timer.reset() : timer.start()} />
+      <TimerBlock timer={timer} onToggle={() => timer.isRunning ? timer.reset() : timer.start()} sessionTonnage={sessionTonnage} />
       <div className="px-4 space-y-4">
         {activeExercises.map(exId => {
             const data = sessionData[exId];
             if (!data) return <div key={exId} className="h-40 bg-zinc-900 rounded-2xl animate-pulse" />;
-            return <WorkoutCard key={exId} exerciseData={data} onAddSet={() => handleAddSet(exId)} onUpdateSet={(sid: string, f: string, v: string) => handleUpdateSet(exId, sid, f, v)} onDeleteSet={(sid: string) => handleDeleteSet(exId, sid)} onCompleteSet={(sid: string) => handleCompleteSet(exId, sid)} onToggleEdit={(sid: string) => handleToggleEdit(exId, sid)} onNoteChange={(val: string) => setSessionData(p => ({...p, [exId]: {...p[exId], note: val}}))} onAddSuperset={() => setIsAddModalOpen(true)} onEditMetadata={() => setExerciseToEdit(data.exercise)} />;
+            return <WorkoutCard key={exId} exerciseData={data} onAddSet={() => handleAddSet(exId)} onUpdateSet={(sid: string, f: string, v: string | number) => handleUpdateSet(exId, sid, f, v)} onDeleteSet={(sid: string) => handleDeleteSet(exId, sid)} onCompleteSet={(sid: string) => handleCompleteSet(exId, sid)} onToggleEdit={(sid: string) => handleToggleEdit(exId, sid)} onNoteChange={(val: string) => setSessionData(p => ({...p, [exId]: {...p[exId], note: val}}))} onAddSuperset={() => setIsAddModalOpen(true)} onEditMetadata={() => setExerciseToEdit(data.exercise)} />;
         })}
       </div>
       <div className="px-4 mt-8 mb-20"><Button variant="primary" onClick={handleFinish} className="w-full h-14 text-lg font-semibold shadow-xl shadow-blue-900/20">Завершить упражнение</Button></div>
@@ -1108,354 +837,6 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
       <div className="fixed bottom-6 left-6 z-20"><button onClick={handleFinish} className="w-12 h-12 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center border border-zinc-700 shadow-lg hover:text-white"><ArrowLeft className="w-6 h-6" /></button></div>
     </div>
   );
-};
-
-// --- ANALYTICS v4.0 ---
-// Регулярность > Прогресс
-
-interface AnalyticsDataV4 {
-  mode: 'Вкат' | 'Поддержание' | 'Стабильный';
-  frequencyScore: { value: number; status: string; actual: number; target: number };
-  maxGap: { value: number; status: string; interpretation: string };
-  returnToBaseline: { value: number; visible: boolean } | null;
-  stabilityGate: boolean;
-  baselines: { exerciseId: string; name: string; baseline: number | null; status: string }[];
-  proposals: { exerciseId: string; oldBaseline: number; newBaseline: number; step: number; expiresAt: string; proposalId: string }[];
-  meta: { period: number };
-}
-
-const AnalyticsScreen = ({ onBack }: any) => {
-  const [analytics, setAnalytics] = useState<AnalyticsDataV4 | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState(14);
-  const [apiError, setApiError] = useState<string | null>(null);
-  
-  const fetchAnalytics = () => {
-    setLoading(true);
-    setApiError(null);
-    api.getAnalytics(period).then((data: AnalyticsDataV4 | { error?: string } | null) => {
-      if (!data) {
-        setAnalytics(null);
-        setApiError('Не удалось загрузить данные');
-      } else if ('error' in data) {
-        setAnalytics(null);
-        setApiError(data.error || 'Ошибка API');
-      } else {
-        setAnalytics(data as AnalyticsDataV4);
-      }
-      setLoading(false);
-    });
-  };
-  
-  useEffect(() => { fetchAnalytics(); }, [period]);
-
-  const handleProposalAction = async (proposalId: string, action: 'CONFIRM' | 'SNOOZE' | 'DECLINE') => {
-    await api.confirmBaseline(proposalId, action);
-    fetchAnalytics();
-  };
-
-  const getFSColor = (status: string) => {
-    if (status === 'green') return 'bg-green-500/20 text-green-400';
-    if (status === 'yellow') return 'bg-yellow-500/20 text-yellow-400';
-    return 'bg-red-500/20 text-red-400';
-  };
-
-  const getModeColor = (mode: string) => {
-    if (mode === 'Стабильный') return 'bg-green-500/20 border-green-500/50';
-    if (mode === 'Вкат') return 'bg-orange-500/20 border-orange-500/50';
-    return 'bg-yellow-500/20 border-yellow-500/50';
-  };
-
-  const getStatusIcon = (status: string) => {
-    if (status === 'locked') return '🔒';
-    if (status === 'ready') return '🟢';
-    if (status === 'updated') return '⬆️';
-    return '🟡';
-  };
-
-  return (
-    <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="min-h-screen bg-zinc-950">
-      <div className="sticky top-0 z-30 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800">
-        <ScreenHeader title="Аналитика" onBack={onBack} />
-        <div className="flex gap-2 px-4 pb-3">
-          {[7, 14, 28].map(p => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                period === p ? 'bg-blue-500 text-white' : 'bg-zinc-800 text-zinc-400 hover:text-white'
-              }`}
-            >
-              {p}д
-            </button>
-          ))}
-        </div>
-      </div>
-      
-      {loading ? (
-        <div className="p-4 space-y-4">
-          {[1,2,3,4].map(i => <div key={i} className="h-24 bg-zinc-900 rounded-2xl animate-pulse" />)}
-        </div>
-      ) : apiError ? (
-        <div className="p-4 text-center text-red-400 mt-20">
-          <AlertTriangle className="w-16 h-16 mx-auto mb-4 opacity-70" />
-          <p className="font-medium">{apiError}</p>
-          <Button variant="secondary" onClick={fetchAnalytics} className="mt-4">Повторить</Button>
-        </div>
-      ) : analytics ? (
-        <div className="p-4 space-y-4 pb-20">
-          <div className="text-center text-xs text-zinc-500 py-1">
-            Показатели за последние {period} дней
-          </div>
-
-          {/* Режим */}
-          <Card className={`p-4 border ${getModeColor(analytics.mode)}`}>
-            <div className="text-sm text-zinc-400 mb-1">Режим</div>
-            <div className="text-xl font-bold text-zinc-100">{analytics.mode}</div>
-          </Card>
-
-          {/* Frequency Score — главный KPI */}
-          <Card className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-zinc-200">Frequency Score</h3>
-              <span className={`px-3 py-1 rounded-full text-sm font-medium ${getFSColor(analytics.frequencyScore?.status)}`}>
-                {analytics.frequencyScore?.value >= 0.8 ? '🟢' : analytics.frequencyScore?.value >= 0.6 ? '🟡' : '🔴'}
-              </span>
-            </div>
-            <div className="text-3xl font-bold text-zinc-100">
-              {Math.round((analytics.frequencyScore?.value || 0) * 100)}%
-            </div>
-            <div className="text-xs text-zinc-500 mt-2">
-              {analytics.frequencyScore?.actual} / {analytics.frequencyScore?.target} тренировок
-            </div>
-          </Card>
-
-          {/* Max Gap */}
-          <Card className="p-4">
-            <h3 className="font-semibold text-zinc-200 mb-2">Max Gap</h3>
-            <div className="text-2xl font-bold text-zinc-100">{analytics.maxGap?.value} дней</div>
-            <div className="text-sm text-zinc-400 mt-1">{analytics.maxGap?.interpretation}</div>
-          </Card>
-
-          {/* Return to Baseline */}
-          {analytics.returnToBaseline?.visible && (
-            <Card className="p-4">
-              <h3 className="font-semibold text-zinc-200 mb-2">Return to Baseline</h3>
-              <div className="text-2xl font-bold text-zinc-100">{analytics.returnToBaseline?.value} тренировок</div>
-            </Card>
-          )}
-
-          {/* Stability Gate */}
-          <Card className={`p-4 ${analytics.stabilityGate ? 'border-green-500/30' : 'border-zinc-700'}`}>
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-zinc-200">Stability Gate</h3>
-              <span className={analytics.stabilityGate ? 'text-green-500' : 'text-zinc-500'}>
-                {analytics.stabilityGate ? '🟢 Открыт' : '🔒 Закрыт'}
-              </span>
-            </div>
-            <div className="text-xs text-zinc-500 mt-1">
-              {analytics.stabilityGate ? 'Готов к росту' : 'FS ≥ 0.6, MG ≤ 45, 7 дней с последнего изменения'}
-            </div>
-          </Card>
-
-          {/* Baseline по упражнениям */}
-          {analytics.baselines?.length > 0 && (
-            <Card className="p-4">
-              <h3 className="font-semibold text-zinc-200 mb-3">Baseline</h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {analytics.baselines.filter(b => b.baseline).map(b => (
-                  <div key={b.exerciseId} className="flex items-center justify-between py-2 border-b border-zinc-800 last:border-0">
-                    <div>
-                      <div className="text-sm text-zinc-200">{b.name}</div>
-                      <div className="text-xs text-zinc-500">{b.status}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-zinc-100">{b.baseline} кг</span>
-                      <span>{getStatusIcon(b.status)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {/* Proposals */}
-          {analytics.proposals?.length > 0 && (
-            <Card className="p-4 border-yellow-500/30">
-              <h3 className="font-semibold text-zinc-200 mb-3">Предложения по росту</h3>
-              <div className="space-y-3">
-                {analytics.proposals.map((p, i) => (
-                  <div key={i} className="p-3 bg-zinc-800/50 rounded-lg">
-                    <div className="text-sm text-zinc-200 mb-2">
-                      {p.oldBaseline} → {p.newBaseline} кг (+{p.step})
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleProposalAction(p.proposalId, 'CONFIRM')} className="flex-1 py-2 bg-green-500/20 text-green-400 rounded-lg text-sm font-medium">
-                        Подтвердить
-                      </button>
-                      <button onClick={() => handleProposalAction(p.proposalId, 'SNOOZE')} className="flex-1 py-2 bg-zinc-700 text-zinc-300 rounded-lg text-sm">
-                        Отложить
-                      </button>
-                      <button onClick={() => handleProposalAction(p.proposalId, 'DECLINE')} className="flex-1 py-2 bg-red-500/20 text-red-400 rounded-lg text-sm">
-                        Отклонить
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-        </div>
-      ) : (
-        <div className="p-4 text-center text-zinc-500 mt-20">
-          <BarChart3 className="w-16 h-16 mx-auto mb-4 opacity-50" />
-          <p>Пока нет данных</p>
-          <p className="text-sm mt-2">Начни тренироваться!</p>
-        </div>
-      )}
-    </motion.div>
-  );
-};
-
-const HistoryScreen = ({ onBack }: any) => {
-    const [history, setHistory] = useState<GlobalWorkoutSession[]>([]);
-    const [expandedIds, setExpandedIds] = useState<string[]>([]);
-    const refreshHistory = () => api.getGlobalHistory().then(data => setHistory(data));
-    useEffect(() => { refreshHistory(); }, []);
-
-    const isExpanded = (id: string) => expandedIds.includes(id);
-    const allExpanded = history.length > 0 && expandedIds.length === history.length;
-    const toggleWorkout = (id: string) => {
-        setExpandedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-    };
-    const expandOrCollapseAll = () => {
-        if (allExpanded) setExpandedIds([]);
-        else setExpandedIds(history.map(w => w.id));
-    };
-
-    return (
-        <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="min-h-screen bg-zinc-950">
-            <ScreenHeader title="История" onBack={onBack} />
-            <div className="p-4 space-y-4 pb-20">
-                {history.length > 0 && (
-                    <div className="flex justify-center pb-2">
-                        <button
-                            onClick={expandOrCollapseAll}
-                            className="w-full max-w-xs text-sm font-semibold text-blue-400 hover:text-blue-300 py-2.5 px-4 rounded-xl bg-blue-500/15 border border-blue-500/30 active:bg-blue-500/25"
-                        >
-                            {allExpanded ? 'Свернуть все тренировки' : 'Развернуть все тренировки'}
-                        </button>
-                    </div>
-                )}
-                {history.map(w => (
-                    <Card key={w.id} className="overflow-hidden">
-                        <div onClick={() => toggleWorkout(w.id)} className="p-4 flex items-center justify-between cursor-pointer active:bg-zinc-800/50">
-                            <div>
-                                <div className="text-zinc-200 font-medium">{w.date} {w.muscleGroups.join(' · ')}</div>
-                            </div>
-                            <ChevronDown className={`w-5 h-5 text-zinc-500 transition-transform flex-shrink-0 ${isExpanded(w.id) ? 'rotate-180' : ''}`} />
-                        </div>
-                        <AnimatePresence>
-                            {isExpanded(w.id) && (
-                                <motion.div 
-                                    initial={{ height: 0, opacity: 0 }} 
-                                    animate={{ height: 'auto', opacity: 1 }} 
-                                    exit={{ height: 0, opacity: 0 }} 
-                                    transition={{ duration: 0.2 }}
-                                    className="border-t border-zinc-800 bg-zinc-900/30 overflow-hidden"
-                                >
-                                    {w.exercises && w.exercises.length > 0 ? (
-                                        w.exercises.map((ex: any, i: number) => {
-                                            // Определяем, является ли упражнение частью суперсета
-                                            const isSuperset = !!ex.supersetId;
-                                            const prevSupersetId = i > 0 ? w.exercises[i - 1]?.supersetId : null;
-                                            const nextSupersetId = i < w.exercises.length - 1 ? w.exercises[i + 1]?.supersetId : null;
-                                            
-                                            // Определяем позицию в суперсете
-                                            const isSupersetStart = isSuperset && prevSupersetId !== ex.supersetId;
-                                            const isSupersetMiddle = isSuperset && prevSupersetId === ex.supersetId && nextSupersetId === ex.supersetId;
-                                            
-                                            // Стили для визуального отображения суперсета
-                                            let borderClass = "border-b border-zinc-800/50";
-                                            let paddingClass = "p-4";
-                                            let supersetIndicator = null;
-                                            
-                                            if (isSuperset) {
-                                                // Синяя линия слева для суперсета
-                                                borderClass = "border-l-2 border-l-blue-500 border-b border-zinc-800/50 bg-blue-500/5";
-                                                if (isSupersetStart) {
-                                                    // Показываем метку "СУПЕРСЕТ" только в начале
-                                                    supersetIndicator = (
-                                                        <div className="text-xs text-blue-400 font-bold mb-2 flex items-center">
-                                                            <LinkIcon className="w-3 h-3 mr-1" /> СУПЕРСЕТ
-                                                        </div>
-                                                    );
-                                                }
-                                                // Убираем нижнюю границу между упражнениями в суперсете
-                                                if (isSupersetMiddle) {
-                                                    borderClass = "border-l-2 border-l-blue-500 border-b-0 bg-blue-500/5";
-                                                }
-                                            }
-                                            
-                                            return (
-                                                <div key={i} className={`${paddingClass} ${borderClass} last:border-b-0`}>
-                                                    {supersetIndicator}
-                                                    <div className="font-medium text-zinc-300 text-sm mb-1">{ex.name}</div>
-                                                    {ex.sets && Array.isArray(ex.sets) && ex.sets.length > 0 ? (
-                                                        <div className="space-y-0">
-                                                            {ex.sets.map((s: any, j: number) => {
-                                                                const weight = typeof s.weight === 'number' ? s.weight : (s.weight ? parseFloat(String(s.weight)) : 0);
-                                                                const reps = typeof s.reps === 'number' ? s.reps : (s.reps ? parseInt(String(s.reps)) : 0);
-                                                                const rest = typeof s.rest === 'number' ? s.rest : (s.rest ? parseFloat(String(s.rest)) : 0);
-                                                                const isLastSet = j === ex.sets.length - 1;
-                                                                const setBorderClass = isLastSet && !isSuperset ? '' : 'border-b border-zinc-800/50';
-                                                                const hasId = !!s.id;
-                                                                return hasId ? (
-                                                                    <HistorySetRow
-                                                                        key={s.id || j}
-                                                                        set={{ id: s.id, weight, reps, rest, exerciseId: s.exerciseId, setGroupId: s.setGroupId, order: s.order }}
-                                                                        className={`py-2 px-3 ${setBorderClass}`}
-                                                                        onSave={async (updates) => {
-                                                                            const res = await api.updateSet({
-                                                                                row_number: s.id,
-                                                                                exercise_id: s.exerciseId || ex.exerciseId,
-                                                                                set_group_id: s.setGroupId || ex.setGroupId || '',
-                                                                                order: s.order ?? j,
-                                                                                weight: updates.weight,
-                                                                                input_weight: updates.weight,
-                                                                                reps: updates.reps,
-                                                                                rest: updates.rest
-                                                                            });
-                                                                            if (res?.status === 'success') refreshHistory();
-                                                                        }}
-                                                                        onDelete={s.id ? async () => {
-                                                                            const res = await api.deleteSet(s.id);
-                                                                            if (res?.status === 'success') refreshHistory();
-                                                                        } : undefined}
-                                                                    />
-                                                                ) : (
-                                                                    <SetDisplayRow key={j} weight={weight} reps={reps} rest={rest} className={`py-2 px-3 ${setBorderClass}`} />
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-xs text-zinc-500">Нет подходов</div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })
-                                    ) : (
-                                        <div className="p-4 text-center text-zinc-500 text-sm">Нет упражнений</div>
-                                    )}
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </Card>
-                ))}
-                {history.length === 0 && <div className="text-center text-zinc-500 py-10 flex flex-col items-center"><Activity className="w-12 h-12 mb-3 opacity-20" /><p>Нет данных</p></div>}
-            </div>
-        </motion.div>
-    );
 };
 
 const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOpen: boolean; onClose: () => void; exercise: Exercise | null; groups: string[]; onSave: (id: string, updates: Partial<Exercise>) => void | Promise<void> }) => {

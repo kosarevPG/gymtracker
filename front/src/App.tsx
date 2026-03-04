@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Search, Plus, Check, Trash2, StickyNote, ChevronDown, Calendar, 
   ArrowLeft, Pencil, Trophy, Link as LinkIcon,
@@ -474,7 +474,7 @@ const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompl
 
 // --- SCREENS (WorkoutScreen stays here - complex with WorkoutCard, SetRow, etc.) ---
 
-const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, haptic, notify, onUpdateExercise }: any) => {
+const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, haptic, notify, setExerciseToEdit, registerSessionDataUpdater }: any) => {
   // ВОССТАНОВЛЕНИЕ СОСТОЯНИЯ: Проверяем наличие незавершенной тренировки
   const getSavedSession = () => {
     try {
@@ -512,8 +512,14 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
   const [finishSrpe, setFinishSrpe] = useState('');
   const [finishBodyWeight, setFinishBodyWeight] = useState('');
   const [supersetSearchQuery, setSupersetSearchQuery] = useState('');
-  const [exerciseToEdit, setExerciseToEdit] = useState<Exercise | null>(null);
-  const groupsFromExercises = useMemo(() => [...new Set(allExercises.map((e: Exercise) => e.muscleGroup).filter(Boolean))].sort() as string[], [allExercises]);
+
+  useEffect(() => {
+    if (!registerSessionDataUpdater) return;
+    registerSessionDataUpdater((id: string, updates: Partial<Exercise>) => {
+      setSessionData(prev => prev[id] ? { ...prev, [id]: { ...prev[id], exercise: { ...prev[id].exercise, ...updates } } } : prev);
+    });
+    return () => registerSessionDataUpdater(null);
+  }, [registerSessionDataUpdater]);
 
   // АВТОСОХРАНЕНИЕ: Сохраняем при любом изменении данных
   useEffect(() => {
@@ -857,24 +863,6 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
           </div>
         </div>
       </Modal>
-      {exerciseToEdit && (
-        <EditExerciseModal
-          isOpen={!!exerciseToEdit}
-          onClose={() => setExerciseToEdit(null)}
-          exercise={exerciseToEdit}
-          groups={groupsFromExercises}
-          onSave={async (id, updates) => {
-            const result = await api.updateExercise(id, updates);
-            if (result?.status === 'success') {
-              setSessionData(prev => {
-                if (!prev[id]) return prev;
-                return { ...prev, [id]: { ...prev[id], exercise: { ...prev[id].exercise, ...updates } } };
-              });
-              onUpdateExercise?.(id, updates);
-            }
-          }}
-        />
-      )}
       <div className="fixed bottom-6 left-6 z-20"><button onClick={handleFinishClick} className="w-12 h-12 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center border border-zinc-700 shadow-lg hover:text-white"><ArrowLeft className="w-6 h-6" /></button></div>
     </div>
   );
@@ -884,6 +872,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
     
     const [name, setName] = useState('');
     const [group, setGroup] = useState('');
+    const [secondaryMuscles, setSecondaryMuscles] = useState('');
     const [description, setDescription] = useState('');
     const [image, setImage] = useState('');
     const [image2, setImage2] = useState('');
@@ -901,6 +890,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
                 exerciseId: exercise.id,
                 name,
                 group,
+                secondaryMuscles,
                 description,
                 image,
                 image2,
@@ -911,7 +901,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
             };
             localStorage.setItem(EDIT_EXERCISE_DRAFT_KEY, JSON.stringify(draft));
         }
-    }, [name, group, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor, exercise, isOpen]);
+    }, [name, group, secondaryMuscles, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor, exercise, isOpen]);
     
     // Восстанавливаем состояние из localStorage или из exercise
     useEffect(() => { 
@@ -925,6 +915,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
                     if (draft.exerciseId === exercise.id) {
                         setName(draft.name || exercise.name);
                         setGroup(draft.group || exercise.muscleGroup);
+                        setSecondaryMuscles(draft.secondaryMuscles ?? exercise.secondaryMuscles ?? '');
                         setDescription(draft.description || exercise.description || '');
                         setImage(draft.image || exercise.imageUrl || '');
                         setImage2(draft.image2 || exercise.imageUrl2 || '');
@@ -941,6 +932,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
             // Если нет сохраненного или это другой exercise, используем данные из exercise
             setName(exercise.name); 
             setGroup(exercise.muscleGroup); 
+            setSecondaryMuscles(exercise.secondaryMuscles || '');
             setDescription(exercise.description || '');
             setImage(exercise.imageUrl || ''); 
             setImage2(exercise.imageUrl2 || '');
@@ -965,7 +957,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
         const handleVisibilityChange = () => {
             if (document.hidden) {
                 // Приложение свернуто - сохраняем состояние
-                const draft = { exerciseId: exercise.id, name, group, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor };
+                const draft = { exerciseId: exercise.id, name, group, secondaryMuscles, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor };
                 localStorage.setItem(EDIT_EXERCISE_DRAFT_KEY, JSON.stringify(draft));
             } else {
                 // Приложение снова видимо - восстанавливаем состояние
@@ -976,6 +968,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
                         if (draft.exerciseId === exercise.id) {
                             setName(draft.name || exercise.name);
                             setGroup(draft.group || exercise.muscleGroup);
+                            setSecondaryMuscles(draft.secondaryMuscles ?? exercise.secondaryMuscles ?? '');
                             setDescription(draft.description || exercise.description || '');
                             setImage(draft.image || exercise.imageUrl || '');
                             setImage2(draft.image2 || exercise.imageUrl2 || '');
@@ -993,14 +986,14 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
         
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [isOpen, exercise, name, group, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor]);
+    }, [isOpen, exercise, name, group, secondaryMuscles, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor]);
     
     const [uploadingImage1, setUploadingImage1] = useState(false);
     const [uploadingImage2, setUploadingImage2] = useState(false);
 
     const saveDraft = () => {
         if (exercise) {
-            const draft = { exerciseId: exercise.id, name, group, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor };
+            const draft = { exerciseId: exercise.id, name, group, secondaryMuscles, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor };
             localStorage.setItem(EDIT_EXERCISE_DRAFT_KEY, JSON.stringify(draft));
         }
     };
@@ -1052,6 +1045,8 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
                     <label className="text-sm text-zinc-400 mb-1 block">Группа</label>
                     <div className="flex flex-wrap gap-2">{groups.map((g: string) => <button key={g} onClick={() => setGroup(g)} className={`px-3 py-2 rounded-xl text-sm border ${group === g ? 'bg-blue-600 border-blue-600 text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-400'}`}>{g}</button>)}</div>
                 </div>
+
+                <div><label className="text-sm text-zinc-400 mb-1 block">Вспомогательные мышцы</label><Input value={secondaryMuscles} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSecondaryMuscles(e.target.value)} placeholder="Например: Трицепс, Плечи" /></div>
 
                 <div className="pt-4 border-t border-zinc-800">
                     <label className="text-sm text-zinc-400 mb-2 block">Расчёт нагрузки</label>
@@ -1105,7 +1100,7 @@ const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }: { isOp
                     onClick={async () => { 
                         if (!exercise) return;
                         localStorage.removeItem(EDIT_EXERCISE_DRAFT_KEY);
-                        await onSave(exercise.id, { name, muscleGroup: group, description, imageUrl: image, imageUrl2: image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor }); 
+                        await onSave(exercise.id, { name, muscleGroup: group, secondaryMuscles, description, imageUrl: image, imageUrl2: image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor }); 
                         onClose(); 
                     }} 
                     className="w-full h-12"
@@ -1132,6 +1127,11 @@ const App = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newGroup, setNewGroup] = useState('');
+  const [exerciseToEdit, setExerciseToEdit] = useState<Exercise | null>(null);
+  const sessionDataUpdaterRef = useRef<((id: string, updates: Partial<Exercise>) => void) | null>(null);
+  const registerSessionDataUpdater = useCallback((fn: ((id: string, updates: Partial<Exercise>) => void) | null) => {
+    sessionDataUpdaterRef.current = fn;
+  }, []);
 
   const [isAuthenticated, setIsAuthenticated] = useState(!!(localStorage.getItem(AUTH_TOKEN_KEY) || '').trim());
   const [authInput, setAuthInput] = useState('');
@@ -1188,17 +1188,27 @@ const App = () => {
   const handleCreate = async () => {
       if (!newName || !newGroup) return;
       const newEx = await api.createExercise(newName, newGroup);
-      if (newEx) { setAllExercises(p => [...p, newEx]); setIsCreateModalOpen(false); setNewName(''); notify('success'); }
+      if (newEx) {
+        setAllExercises(p => [...p, newEx]);
+        setIsCreateModalOpen(false);
+        setNewName('');
+        setNewGroup('');
+        notify('success');
+        setExerciseToEdit(newEx);
+      }
   };
 
-  const handleUpdate = async (id: string, updates: Partial<Exercise>) => {
+  const handleUpdate = async (id: string, updates: Partial<Exercise>): Promise<boolean> => {
       setAllExercises(p => p.map(ex => ex.id === id ? { ...ex, ...updates } : ex));
       const result = await api.updateExercise(id, updates);
       if (result) {
           const freshData = await api.getInit();
           if (freshData && freshData.exercises) setAllExercises(freshData.exercises);
           notify('success');
-      } else { notify('error'); }
+          return true;
+      }
+      notify('error');
+      return false;
   };
 
   if (!isAuthenticated) {
@@ -1235,8 +1245,20 @@ const App = () => {
       {screen === 'analytics' && <AnalyticsScreen exercises={allExercises} onBack={() => setScreen('home')} />}
       {screen === 'history' && <HistoryScreen onBack={() => setScreen('home')} />}
       {screen === 'exercises' && <ExercisesListScreen exercises={filteredExercises} allExercises={allExercises} title={selectedGroup || (searchQuery ? `Поиск: ${searchQuery}` : 'Все упражнения')} searchQuery={searchQuery} onSearch={(q: string) => setSearchQuery(q)} onBack={() => { setSearchQuery(''); setSelectedGroup(null); setScreen('home'); }} onSelectExercise={(ex: Exercise) => { haptic('light'); setCurrentExercise(ex); setScreen('workout'); }} onAddExercise={() => setIsCreateModalOpen(true)} />}
-      {screen === 'workout' && currentExercise && <WorkoutScreen initialExercise={currentExercise} allExercises={allExercises} incrementOrder={incrementOrder} haptic={haptic} notify={notify} onBack={() => setScreen('exercises')} onUpdateExercise={handleUpdate} />}
+      {screen === 'workout' && currentExercise && <WorkoutScreen initialExercise={currentExercise} allExercises={allExercises} incrementOrder={incrementOrder} haptic={haptic} notify={notify} onBack={() => setScreen('exercises')} setExerciseToEdit={setExerciseToEdit} registerSessionDataUpdater={registerSessionDataUpdater} />}
       
+      {exerciseToEdit && (
+        <EditExerciseModal
+          isOpen={!!exerciseToEdit}
+          onClose={() => setExerciseToEdit(null)}
+          exercise={exerciseToEdit}
+          groups={[...new Set(allExercises.map((e: Exercise) => e.muscleGroup).filter(Boolean))].sort() as string[]}
+          onSave={async (id, updates) => {
+            const ok = await handleUpdate(id, updates);
+            if (ok) sessionDataUpdaterRef.current?.(id, updates);
+          }}
+        />
+      )}
       <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Новое упражнение">
          <div className="space-y-4">
              <div><label className="text-sm text-zinc-400 mb-1 block">Название</label><Input value={newName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewName(e.target.value)} placeholder="Например: Отжимания" /></div>

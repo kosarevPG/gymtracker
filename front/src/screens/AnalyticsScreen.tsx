@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { AlertTriangle, Activity, BarChart3 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, Button } from '../ui';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { api } from '../api';
@@ -8,68 +9,49 @@ import type { Exercise } from '../types';
 
 const MUSCLE_ORDER = ['Спина', 'Ноги', 'Грудь', 'Плечи', 'Трицепс', 'Бицепс', 'Пресс', 'Кардио'];
 
-const CHART_HEIGHT = 180;
-const CHART_PADDING = { top: 8, right: 8, bottom: 28, left: 40 };
-
 interface VolumeE1rmPoint {
   date: string;
   volume: number;
   e1rm: number;
 }
 
+const CHART_COLORS = { volume: '#3b82f6', e1rm: '#f59e0b' };
+
 function VolumeE1rmChart({ data }: { data: VolumeE1rmPoint[] }) {
   if (data.length === 0) return null;
-  const maxVolume = Math.max(1, ...data.map((d) => d.volume));
-  const maxE1rm = Math.max(1, ...data.map((d) => d.e1rm));
-  const innerW = 280;
-  const innerH = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
-  const barW = Math.max(4, (innerW - (data.length - 1) * 4) / data.length);
-  const gap = 4;
+  const chartData = data.map((d) => ({
+    ...d,
+    dateShort: d.date.split('.').slice(-2).join('.'),
+    volumeLabel: d.volume > 0 ? `${Math.round(d.volume).toLocaleString('ru')} кг` : '',
+    e1rmLabel: d.e1rm > 0 ? `${Math.round(d.e1rm)} кг` : '',
+  }));
 
   return (
-    <div className="overflow-x-auto">
-      <svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 ${innerW + CHART_PADDING.left + CHART_PADDING.right} ${CHART_HEIGHT}`} preserveAspectRatio="xMinYMid meet" className="min-w-[320px]">
-        <defs>
-          <linearGradient id="volGrad" x1="0" y1="1" x2="0" y2="0">
-            <stop offset="0" stopColor="#3b82f6" stopOpacity="0.3" />
-            <stop offset="1" stopColor="#3b82f6" stopOpacity="0.8" />
-          </linearGradient>
-        </defs>
-        {data.map((d, i) => {
-          const x = CHART_PADDING.left + i * (barW + gap);
-          const volH = (d.volume / maxVolume) * innerH;
-          const e1rmY = CHART_PADDING.top + innerH - (d.e1rm / maxE1rm) * innerH;
-          return (
-            <g key={d.date}>
-              <rect
-                x={x}
-                y={CHART_PADDING.top + innerH - volH}
-                width={barW}
-                height={volH}
-                fill="url(#volGrad)"
-                rx={2}
-              />
-              {i > 0 && data[i - 1].e1rm > 0 && d.e1rm > 0 && (
-                <line
-                  x1={CHART_PADDING.left + (i - 1) * (barW + gap) + barW / 2}
-                  y1={CHART_PADDING.top + innerH - (data[i - 1].e1rm / maxE1rm) * innerH}
-                  x2={x + barW / 2}
-                  y2={e1rmY}
-                  stroke="#f59e0b"
-                  strokeWidth="2"
-                  fill="none"
-                />
-              )}
-              {d.e1rm > 0 && <circle cx={x + barW / 2} cy={e1rmY} r={3} fill="#f59e0b" />}
-              <text x={x + barW / 2} y={CHART_HEIGHT - 6} textAnchor="middle" className="fill-zinc-500" fontSize="9">
-                {d.date.split('.').slice(-2).join('.')}
-              </text>
-            </g>
-          );
-        })}
-        <text x={8} y={CHART_PADDING.top + 10} className="fill-zinc-500" fontSize="9">Объём</text>
-        <text x={innerW + CHART_PADDING.left + CHART_PADDING.right - 32} y={CHART_PADDING.top + 10} className="fill-amber-500" fontSize="9">e1RM</text>
-      </svg>
+    <div className="w-full h-[280px] overflow-x-auto min-w-[320px]">
+      <ResponsiveContainer width="100%" height="100%" minWidth={320}>
+        <ComposedChart data={chartData} margin={{ top: 8, right: 8, bottom: 24, left: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
+          <XAxis dataKey="dateShort" tick={{ fill: '#71717a', fontSize: 12 }} stroke="#52525b" />
+          <YAxis yAxisId="left" tick={{ fill: '#71717a', fontSize: 11 }} stroke="#52525b" tickFormatter={(v) => `${v}`} />
+          <YAxis yAxisId="right" orientation="right" tick={{ fill: '#f59e0b', fontSize: 11 }} stroke="#52525b" tickFormatter={(v) => `${v}`} />
+          <Tooltip
+            contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #3f3f46', borderRadius: '8px' }}
+            labelStyle={{ color: '#a1a1aa' }}
+            formatter={(value, name) => [
+              value != null ? (name === 'volume' ? `${Math.round(Number(value)).toLocaleString('ru')} кг` : `${Math.round(Number(value))} кг`) : '—',
+              name === 'volume' ? 'Тоннаж' : 'e1RM',
+            ]}
+            labelFormatter={(label) => `Дата: ${label}`}
+          />
+          <Legend
+            wrapperStyle={{ fontSize: 12 }}
+            formatter={(value) => (value === 'volume' ? 'Тоннаж' : 'e1RM')}
+            iconType="square"
+          />
+          <Bar yAxisId="left" dataKey="volume" fill={CHART_COLORS.volume} fillOpacity={0.7} radius={[2, 2, 0, 0]} name="volume" />
+          <Line yAxisId="right" type="monotone" dataKey="e1rm" stroke={CHART_COLORS.e1rm} strokeWidth={2} dot={{ r: 4, fill: CHART_COLORS.e1rm }} connectNulls name="e1rm" />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }

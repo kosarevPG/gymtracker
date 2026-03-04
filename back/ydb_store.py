@@ -219,10 +219,15 @@ def create_exercise(name: str, group: str, equipment_type: str = None, exercise_
 
 
 def update_exercise(ex_id: str, data: Dict) -> bool:
-    """Обновляет упражнение."""
+    """Обновляет упражнение и таблицу exercise_muscles (фракционный учёт)."""
     pool = get_pool()
     if not pool:
         return False
+    # primary_muscle: из data или из БД (нужно до UPDATE для delete_secondary_muscles)
+    primary_muscle = data.get('muscleGroup') or _get_exercise_muscle_group(ex_id)
+    if isinstance(primary_muscle, str):
+        primary_muscle = primary_muscle.strip() or None
+
     updates = []
     if 'name' in data:
         updates.append(f'name = "{_esc(str(data["name"]))}"')
@@ -239,11 +244,25 @@ def update_exercise(ex_id: str, data: Dict) -> bool:
         updates.append(f'multiplier = {mult_val}')
     if 'bodyWeightFactor' in data:
         bwf = _to_float(data.get('bodyWeightFactor'), 1.0)
-        updates.append(f'body_weight_factor = {bwf}')  # Для существующих таблиц: ALTER TABLE exercises ADD COLUMN body_weight_factor Double;
+        updates.append(f'body_weight_factor = {bwf}')
     if updates:
         pool.execute_with_retries(f"""
             UPDATE exercises SET {", ".join(updates)} WHERE id = "{_esc(ex_id)}";
         """)
+
+    # exercise_muscles: primary + secondaryMuscles
+    if primary_muscle:
+        upsert_exercise_muscle(ex_id, primary_muscle, 1.0)
+
+    if 'secondaryMuscles' in data:
+        sec_raw = str(data.get('secondaryMuscles', '') or '').strip()
+        if sec_raw:
+            for muscle in (m.strip() for m in sec_raw.split(',') if m.strip()):
+                if muscle != primary_muscle:  # не перезаписывать primary
+                    upsert_exercise_muscle(ex_id, muscle, 0.5)
+        else:
+            delete_secondary_muscles(ex_id, primary_muscle or '')
+
     return True
 
 
@@ -507,6 +526,38 @@ def upsert_exercise_muscle(exercise_id: str, muscle_group: str, weight_factor: f
         return True
     except Exception as e:
         logger.error(f"upsert_exercise_muscle: {e}", exc_info=True)
+        return False
+
+
+def _get_exercise_muscle_group(ex_id: str) -> Optional[str]:
+    """Возвращает muscle_group упражнения из БД или None."""
+    pool = get_pool()
+    if not pool:
+        return None
+    try:
+        result = pool.execute_with_retries(f'SELECT muscle_group FROM exercises WHERE id = "{_esc(ex_id)}";')
+        if result and result[0].rows:
+            return str(result[0].rows[0].muscle_group or '').strip() or None
+    except Exception as e:
+        logger.error(f"_get_exercise_muscle_group: {e}", exc_info=True)
+    return None
+
+
+def delete_secondary_muscles(exercise_id: str, primary_muscle: str) -> bool:
+    """Удаляет записи синергистов (оставляет только primary с фактором 1.0)."""
+    if not primary_muscle:
+        return False
+    pool = get_pool()
+    if not pool:
+        return False
+    try:
+        pool.execute_with_retries(f"""
+            DELETE FROM exercise_muscles
+            WHERE exercise_id = "{_esc(exercise_id)}" AND muscle_group != "{_esc(primary_muscle)}";
+        """)
+        return True
+    except Exception as e:
+        logger.error(f"delete_secondary_muscles: {e}", exc_info=True)
         return False
 
 

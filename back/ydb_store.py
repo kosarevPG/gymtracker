@@ -418,7 +418,7 @@ def start_session(body_weight: float = 0) -> Dict:
     try:
         pool.execute_with_retries(f"""
             UPSERT INTO sessions (id, date, start_ts, end_ts, duration_sec, srpe, body_weight)
-            VALUES ("{session_id}", "{date_str}", {now_ts}, {now_ts}, 0, 0, {_to_float(body_weight)});
+            VALUES ("{session_id}", "{date_str}", DateTime::FromMicroseconds({now_ts}), DateTime::FromMicroseconds({now_ts}), 0, 0, {_to_float(body_weight)});
         """)
         return {"session_id": session_id, "date": date_str}
     except Exception as e:
@@ -442,10 +442,10 @@ def finish_session(session_id: str, srpe: float = 0, body_weight: float = 0) -> 
         start_ts = getattr(result[0].rows[0], 'start_ts', None)
         if start_ts is None:
             return False
-        start_sec = int(start_ts) / 1_000_000
+        start_sec = int(start_ts.timestamp()) if hasattr(start_ts, 'timestamp') else int(start_ts) // 1_000_000
         duration_sec = int(now.timestamp()) - start_sec
         pool.execute_with_retries(f"""
-            UPDATE sessions SET end_ts = {now_ts}, duration_sec = {duration_sec}, srpe = {_to_float(srpe)}, body_weight = {_to_float(body_weight)}
+            UPDATE sessions SET end_ts = DateTime::FromMicroseconds({now_ts}), duration_sec = {duration_sec}, srpe = {_to_float(srpe)}, body_weight = {_to_float(body_weight)}
             WHERE id = "{_esc(session_id)}";
         """)
         return True

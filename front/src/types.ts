@@ -11,6 +11,8 @@ export interface Exercise {
   weightType?: string;
   baseWeight?: number;
   weightMultiplier?: number;
+  /** Биомеханический коэффициент для bodyweight (напр. 0.68 для отжиманий). По умолчанию 1.0. */
+  bodyWeightFactor?: number;
   /** 1RM методологически некорректен для Assisted/Bodyweight */
   allow_1rm?: boolean;
 }

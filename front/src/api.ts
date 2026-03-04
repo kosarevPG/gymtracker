@@ -83,6 +83,37 @@ export const api = {
   createExercise: async (name: string, group: string) => await api.request('create_exercise', { method: 'POST', body: JSON.stringify({ name, group }) }),
   updateExercise: async (id: string, updates: Partial<Exercise>) => await api.request('update_exercise', { method: 'POST', body: JSON.stringify({ id, updates }) }),
   ping: async () => await api.request('ping'),
+
+  startSession: async (bodyWeight?: number) => {
+    try {
+      const res = await fetch(buildApiUrl('start_session'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
+        body: JSON.stringify({ body_weight: bodyWeight ?? 0 })
+      });
+      if (res.status === 403) { handle403(); return null; }
+      if (res.ok) return await res.json();
+    } catch (e) { console.error('startSession failed', e); }
+    return null;
+  },
+
+  finishSession: async (data: { session_id: string; srpe?: number; body_weight?: number }) => {
+    try {
+      const res = await fetch(buildApiUrl('finish_session'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
+        body: JSON.stringify({
+          session_id: data.session_id,
+          srpe: data.srpe ?? 0,
+          body_weight: data.body_weight ?? 0
+        })
+      });
+      if (res.status === 403) { handle403(); return null; }
+      if (res.ok) return await res.json();
+    } catch (e) { console.error('finishSession failed', e); }
+    return null;
+  },
+
   uploadImage: async (file: File) => {
     const formData = new FormData();
     formData.append('image', file);

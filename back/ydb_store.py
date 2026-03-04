@@ -74,6 +74,7 @@ def _ensure_tables(pool) -> None:
             weight_type Utf8,
             base_weight Double,
             multiplier Double,
+            body_weight_factor Double,
             PRIMARY KEY (id)
         );
     """)
@@ -174,6 +175,7 @@ def get_all_exercises() -> Dict:
                 'weightType': str(_row_val(row, 'weight_type', 'weightType', 'Weight_Type')) or 'Barbell',
                 'baseWeight': _to_float(_row_val(row, 'base_weight', 'baseWeight', 'Base_Wt')),
                 'weightMultiplier': _to_float(_row_val(row, 'weight_multiplier', 'weightMultiplier', 'Multiplier', 'multiplier'), 1.0),
+                'bodyWeightFactor': _to_float(_row_val(row, 'body_weight_factor', 'bodyWeightFactor'), 1.0),
                 'secondaryMuscles': str(_row_val(row, 'secondary_muscles', 'secondaryMuscles', 'Secondary_Muscles') or ''),
             }
             ex['allow_1rm'] = ex['weightType'] not in ('Assisted', 'Bodyweight')
@@ -235,6 +237,9 @@ def update_exercise(ex_id: str, data: Dict) -> bool:
     if 'weightMultiplier' in data:
         mult_val = _to_float(data.get('weightMultiplier'), 1.0)
         updates.append(f'multiplier = {mult_val}')
+    if 'bodyWeightFactor' in data:
+        bwf = _to_float(data.get('bodyWeightFactor'), 1.0)
+        updates.append(f'body_weight_factor = {bwf}')  # Для существующих таблиц: ALTER TABLE exercises ADD COLUMN body_weight_factor Double;
     if updates:
         pool.execute_with_retries(f"""
             UPDATE exercises SET {", ".join(updates)} WHERE id = "{_esc(ex_id)}";
@@ -515,7 +520,8 @@ def get_volume_load(days: int = 7, exercise_id: str = None) -> float:
 
 
 def get_muscle_volume(days: int = 7) -> Dict[str, float]:
-    """Тоннаж по группам мышц за последние days дней (только working). Использует muscle_group из exercises."""
+    """Тоннаж по группам мышц за последние days дней (только working).
+    Использует exercise_muscles: muscle_group + weight_factor. Если записей нет — muscleGroup из exercises с фактором 1.0."""
     pool = get_pool()
     if not pool:
         return {}
@@ -525,6 +531,7 @@ def get_muscle_volume(days: int = 7) -> Dict[str, float]:
     ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
     muscle_vol = {}
     muscle_sets = {}
+    muscles_cache = {}
     try:
         q = f'SELECT {date_col}, exercise_id, total_weight, reps, set_type FROM {tbl} LIMIT 5000;'
         r = pool.execute_with_retries(q)
@@ -539,10 +546,22 @@ def get_muscle_volume(days: int = 7) -> Dict[str, float]:
             ex_id = _row_val(row, 'exercise_id', 'exerciseId')
             w = _to_float(_row_val(row, 'total_weight', 'totalWeight'))
             rp = _to_int(_row_val(row, 'reps', 'Reps'))
-            ex_info = ex_map.get(ex_id, {})
-            mg = ex_info.get('muscleGroup', 'Other')
-            muscle_vol[mg] = muscle_vol.get(mg, 0) + w * rp
-            muscle_sets[mg] = muscle_sets.get(mg, 0) + 1
+            tonnage = w * rp
+
+            if ex_id not in muscles_cache:
+                muscles_cache[ex_id] = get_exercise_muscles(ex_id)
+            muscles = muscles_cache[ex_id]
+            if muscles:
+                for m in muscles:
+                    mg = m.get('muscle_group', 'Other')
+                    factor = _to_float(m.get('weight_factor'), 1.0)
+                    muscle_vol[mg] = muscle_vol.get(mg, 0) + tonnage * factor
+                    muscle_sets[mg] = muscle_sets.get(mg, 0) + factor
+            else:
+                ex_info = ex_map.get(ex_id, {})
+                mg = ex_info.get('muscleGroup', 'Other')
+                muscle_vol[mg] = muscle_vol.get(mg, 0) + tonnage
+                muscle_sets[mg] = muscle_sets.get(mg, 0) + 1
         return {"volume": muscle_vol, "sets": muscle_sets}
     except Exception as e:
         logger.error(f"get_muscle_volume: {e}", exc_info=True)

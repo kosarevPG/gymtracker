@@ -1,11 +1,88 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AlertTriangle, Activity } from 'lucide-react';
+import { AlertTriangle, Activity, BarChart3 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Card, Button } from '../ui';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { api } from '../api';
+import type { Exercise } from '../types';
 
 const MUSCLE_ORDER = ['Спина', 'Ноги', 'Грудь', 'Плечи', 'Трицепс', 'Бицепс', 'Пресс', 'Кардио'];
+
+const CHART_HEIGHT = 180;
+const CHART_PADDING = { top: 8, right: 8, bottom: 28, left: 40 };
+
+interface VolumeE1rmPoint {
+  date: string;
+  volume: number;
+  e1rm: number;
+}
+
+function VolumeE1rmChart({ data }: { data: VolumeE1rmPoint[] }) {
+  if (data.length === 0) return null;
+  const maxVolume = Math.max(1, ...data.map((d) => d.volume));
+  const maxE1rm = Math.max(1, ...data.map((d) => d.e1rm));
+  const innerW = 280;
+  const innerH = CHART_HEIGHT - CHART_PADDING.top - CHART_PADDING.bottom;
+  const barW = Math.max(4, (innerW - (data.length - 1) * 4) / data.length);
+  const gap = 4;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 ${innerW + CHART_PADDING.left + CHART_PADDING.right} ${CHART_HEIGHT}`} preserveAspectRatio="xMinYMid meet" className="min-w-[320px]">
+        <defs>
+          <linearGradient id="volGrad" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stopColor="#3b82f6" stopOpacity="0.3" />
+            <stop offset="1" stopColor="#3b82f6" stopOpacity="0.8" />
+          </linearGradient>
+        </defs>
+        {data.map((d, i) => {
+          const x = CHART_PADDING.left + i * (barW + gap);
+          const volH = (d.volume / maxVolume) * innerH;
+          const e1rmY = CHART_PADDING.top + innerH - (d.e1rm / maxE1rm) * innerH;
+          return (
+            <g key={d.date}>
+              <rect
+                x={x}
+                y={CHART_PADDING.top + innerH - volH}
+                width={barW}
+                height={volH}
+                fill="url(#volGrad)"
+                rx={2}
+              />
+              {i > 0 && data[i - 1].e1rm > 0 && d.e1rm > 0 && (
+                <line
+                  x1={CHART_PADDING.left + (i - 1) * (barW + gap) + barW / 2}
+                  y1={CHART_PADDING.top + innerH - (data[i - 1].e1rm / maxE1rm) * innerH}
+                  x2={x + barW / 2}
+                  y2={e1rmY}
+                  stroke="#f59e0b"
+                  strokeWidth="2"
+                  fill="none"
+                />
+              )}
+              {d.e1rm > 0 && <circle cx={x + barW / 2} cy={e1rmY} r={3} fill="#f59e0b" />}
+              <text x={x + barW / 2} y={CHART_HEIGHT - 6} textAnchor="middle" className="fill-zinc-500" fontSize="9">
+                {d.date.split('.').slice(-2).join('.')}
+              </text>
+            </g>
+          );
+        })}
+        <text x={8} y={CHART_PADDING.top + 10} className="fill-zinc-500" fontSize="9">Объём</text>
+        <text x={innerW + CHART_PADDING.left + CHART_PADDING.right - 32} y={CHART_PADDING.top + 10} className="fill-amber-500" fontSize="9">e1RM</text>
+      </svg>
+    </div>
+  );
+}
+
+function calcE1rm(weight: number, reps: number): number {
+  if (weight <= 0 || reps <= 0) return 0;
+  if (reps <= 5) return weight * (1 + reps / 30);
+  if (reps <= 10) {
+    const denom = 1.0278 - 0.0278 * reps;
+    return denom <= 0 ? weight : weight / denom;
+  }
+  return weight * (1 + reps / 30);
+}
 
 interface AnalyticsData {
   volume?: number;
@@ -15,15 +92,19 @@ interface AnalyticsData {
 }
 
 export interface AnalyticsScreenProps {
+  exercises?: Exercise[];
   onBack: () => void;
 }
 
-export const AnalyticsScreen = ({ onBack }: AnalyticsScreenProps) => {
+export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps) => {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(14);
   const [apiError, setApiError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string>('');
+  const [volumeE1rmData, setVolumeE1rmData] = useState<VolumeE1rmPoint[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -41,6 +122,40 @@ export const AnalyticsScreen = ({ onBack }: AnalyticsScreenProps) => {
       setLoading(false);
     });
   }, [period, retry]);
+
+  useEffect(() => {
+    if (!selectedExerciseId) {
+      setVolumeE1rmData([]);
+      return;
+    }
+    setChartLoading(true);
+    api.getHistory(selectedExerciseId).then((res: { history?: { date: string; sets: { weight: number; reps: number; set_type?: string }[] }[] }) => {
+      const history = res?.history || [];
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - period);
+      const cutoffStr = cutoff.toISOString().slice(0, 10).replace(/-/g, '.');
+      const points: VolumeE1rmPoint[] = [];
+      for (const day of history) {
+        const d = day.date.replace(/-/g, '.');
+        if (d < cutoffStr) continue;
+        let volume = 0;
+        let maxE1rm = 0;
+        for (const s of day.sets || []) {
+          const st = (s.set_type || '').toLowerCase();
+          if (st && st !== 'working') continue;
+          const w = Number(s.weight) || 0;
+          const r = Number(s.reps) || 0;
+          volume += w * r;
+          const e = calcE1rm(w, r);
+          if (e > maxE1rm) maxE1rm = e;
+        }
+        points.push({ date: d, volume, e1rm: maxE1rm });
+      }
+      points.sort((a, b) => a.date.localeCompare(b.date));
+      setVolumeE1rmData(points);
+      setChartLoading(false);
+    });
+  }, [selectedExerciseId, period]);
 
   const muscleList = useMemo(() => {
     const sets = data?.muscleSets || {};
@@ -118,6 +233,39 @@ export const AnalyticsScreen = ({ onBack }: AnalyticsScreenProps) => {
               <div className="mt-2 text-sm text-zinc-400">
                 ACWR: {data.acwr.ratio} (острая: {data.acwr.acute?.toLocaleString()}, хроническая: {data.acwr.chronic?.toLocaleString()})
               </div>
+            )}
+          </Card>
+
+          <Card className="p-4">
+            <h2 className="text-sm font-bold text-zinc-400 uppercase mb-3 flex items-center gap-2">
+              <BarChart3 className="w-4 h-4" />
+              Объём vs e1RM
+            </h2>
+            <div className="mb-3">
+              <label className="text-xs text-zinc-500 block mb-1">Упражнение</label>
+              <select
+                value={selectedExerciseId}
+                onChange={(e) => setSelectedExerciseId(e.target.value)}
+                className="w-full h-10 bg-zinc-800 rounded-xl px-3 text-zinc-100 text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+              >
+                <option value="">Выберите упражнение</option>
+                {[...exercises].sort((a, b) => a.name.localeCompare(b.name, 'ru')).map((ex) => (
+                  <option key={ex.id} value={ex.id}>{ex.name}</option>
+                ))}
+              </select>
+            </div>
+            {chartLoading ? (
+              <div className="h-48 bg-zinc-900 rounded-xl animate-pulse flex items-center justify-center">
+                <span className="text-zinc-500 text-sm">Загрузка...</span>
+              </div>
+            ) : volumeE1rmData.length === 0 ? (
+              <div className="h-48 bg-zinc-900/50 rounded-xl flex items-center justify-center border border-dashed border-zinc-700">
+                <span className="text-zinc-500 text-sm">
+                  {selectedExerciseId ? 'Нет данных за период' : 'Выберите упражнение'}
+                </span>
+              </div>
+            ) : (
+              <VolumeE1rmChart data={volumeE1rmData} />
             )}
           </Card>
         </div>

@@ -40,6 +40,7 @@ jobs:
           memory: 512Mb
           execution-timeout: 120
           source-root: back
+          include: index.py ydb_store.py schemas.py routes.py requirements.txt
           environment: |
             YDB_ENDPOINT=${{ secrets.YDB_ENDPOINT }}
             YDB_DATABASE=${{ secrets.YDB_DATABASE }}

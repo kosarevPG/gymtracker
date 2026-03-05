@@ -426,30 +426,38 @@ def _parse_date_val(val) -> str:
 
 
 def export_logs_csv() -> str:
-    """Экспорт всех записей из таблицы логов в CSV. Сортировка по дате по убыванию."""
+    """Экспорт всех записей из таблицы логов в CSV. Сортировка по дате по убыванию.
+    Использует SELECT * вместо жёсткого списка колонок, чтобы избежать падений
+    из-за отсутствия новых колонок в старых таблицах. BOM для корректной кириллицы в Excel."""
     pool = get_pool()
     if not pool:
         return ''
     tbl = _log_table()
     date_col = _log_date_col()
-    columns = ['id', 'date', 'exercise_name', 'input_weight', 'total_weight', 'reps', 'rest', 'set_type', 'rpe', 'rir', 'is_low_confidence', 'session_id']
+    columns = ['id', 'date', 'order', 'exercise_name', 'input_weight', 'total_weight', 'reps', 'rest', 'set_type', 'rpe', 'rir', 'is_low_confidence', 'session_id']
     try:
         result = pool.execute_with_retries(f"""
-            SELECT id, {date_col}, exercise_name, input_weight, total_weight, reps, rest, set_type, rpe, rir, is_low_confidence, session_id
+            SELECT *
             FROM {tbl}
             ORDER BY {date_col} DESC;
         """)
         rows = result[0].rows if result and result[0].rows else []
+        ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
         out = io.StringIO(newline='')
+        out.write('\ufeff')
         writer = csv.writer(out, delimiter=',', quoting=csv.QUOTE_MINIMAL)
         writer.writerow(columns)
         for row in rows:
             raw_date = _row_val(row, date_col, 'date', 'date_time', 'Date', 'DateTime')
             date_val = _parse_date_val(raw_date) if raw_date else str(raw_date or '')
+            ex_id = _row_val(row, 'exercise_id', 'exerciseId', 'Exercise_ID')
+            ex_info = ex_map.get(ex_id, {})
+            ex_name = ex_info.get('name') or _row_val(row, 'exercise_name', 'exerciseName', 'Exercise_Name') or 'Unknown'
             writer.writerow([
                 str(_row_val(row, 'id', 'ID') or ''),
                 date_val,
-                str(_row_val(row, 'exercise_name', 'exerciseName', 'Exercise_Name') or ''),
+                _to_int(_row_val(row, 'ord', 'order', 'Order', 'sort_order', 'Sort_Order')),
+                ex_name,
                 _to_float(_row_val(row, 'input_weight', 'inputWeight', 'Input_Weight')),
                 _to_float(_row_val(row, 'total_weight', 'totalWeight', 'Total_Weight')),
                 _to_int(_row_val(row, 'reps', 'Reps')),

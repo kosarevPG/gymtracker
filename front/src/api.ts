@@ -147,8 +147,13 @@ export const api = {
       });
       if (res.status === 403) { handle403(); return false; }
       if (!res.ok) throw new Error('Export failed');
-      const text = await res.text();
-      const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+      const data = await res.json();
+      const csvBase64 = data?.csv;
+      if (!csvBase64 || typeof csvBase64 !== 'string') throw new Error('Invalid export response');
+      const binary = atob(csvBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

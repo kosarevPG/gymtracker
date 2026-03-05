@@ -273,19 +273,12 @@ def api_finish_session(params, body, headers):
 
 
 def api_export_csv(params, body, headers):
-    """GET /api/export_csv — экспорт логов в CSV"""
+    """GET /api/export_csv — экспорт логов в CSV (base64 для надёжной передачи UTF-8 с BOM)"""
+    import base64
     csv_content = export_logs_csv() if HAS_YDB else ''
-    return {
-        'statusCode': 200,
-        'headers': {
-            'Content-Type': 'text/csv; charset=utf-8',
-            'Content-Disposition': 'attachment; filename="gymtracker_export.csv"',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Auth-Token',
-        },
-        'body': csv_content,
-    }
+    csv_bytes = csv_content.encode('utf-8')
+    csv_b64 = base64.b64encode(csv_bytes).decode('ascii')
+    return json_response({'csv': csv_b64})
 
 
 # CORS headers (для OPTIONS и ответов). Регистр заголовков может зависеть от платформы.

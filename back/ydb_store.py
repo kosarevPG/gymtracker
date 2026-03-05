@@ -52,7 +52,7 @@ def get_pool():
             database=database,
             credentials=_get_credentials(),
         )
-        _driver.wait(timeout=5, fail_fast=True)
+        _driver.wait(timeout=10, fail_fast=True)
         _pool = ydb.QuerySessionPool(_driver)
         return _pool
     except Exception as e:
@@ -434,15 +434,17 @@ def _parse_date_val(val) -> str:
     return s
 
 
+EXPORT_CSV_LIMIT = 50000  # Ограничение для предотвращения таймаута при большом объёме данных
+
 def export_logs_csv() -> str:
-    """Экспорт всех записей из таблицы log в CSV. Сортировка по дате по убыванию. BOM для корректной кириллицы в Excel."""
+    """Экспорт записей из таблицы log в CSV. Сортировка по дате по убыванию. BOM для корректной кириллицы в Excel."""
     pool = get_pool()
     if not pool:
         return ''
     columns = ['id', 'date', 'order', 'exercise_name', 'input_weight', 'total_weight', 'reps', 'rest', 'set_type', 'rpe', 'rir', 'is_low_confidence', 'session_id']
     try:
-        result = pool.execute_with_retries("""
-            SELECT * FROM log ORDER BY date DESC;
+        result = pool.execute_with_retries(f"""
+            SELECT * FROM log ORDER BY date DESC LIMIT {EXPORT_CSV_LIMIT};
         """)
         rows = result[0].rows if result and result[0].rows else []
         ex_map = {e['id']: e for e in get_all_exercises()['exercises']}

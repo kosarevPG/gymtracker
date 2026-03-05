@@ -37,8 +37,8 @@ jobs:
           function-name: ${{ secrets.YC_FUNCTION_NAME || 'gymtracker-api' }}
           runtime: python312
           entrypoint: index.handler
-          memory: 256Mb
-          execution-timeout: 60
+          memory: 512Mb
+          execution-timeout: 120
           source-root: back
           include: |
             index.py

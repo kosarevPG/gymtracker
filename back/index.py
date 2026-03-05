@@ -1,6 +1,7 @@
 """
 Yandex Cloud Function — API для GymTracker (YDB)
 Обрабатывает запросы по ?url=/api/xxx
+Deploy v2
 """
 
 import json

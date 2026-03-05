@@ -15,7 +15,7 @@ export function SetDisplayRow({ weight, reps, rest, setType, rpe, rir, className
 
   return (
     <div className={`flex items-center gap-1.5 text-sm ${isWarmup ? 'text-zinc-500' : 'text-zinc-300'} ${className}`}>
-      {/* 1. Блок веса: фиксированная ширина 48px (w-12), выравнивание по правому краю */}
+      {/* Блок веса: фиксированная ширина 48px (w-12), выравнивание по правому краю */}
       <span className={`w-12 text-right tabular-nums text-lg font-bold ${isWarmup ? 'text-zinc-400' : 'text-zinc-100'}`}>
         {weight}
       </span>
@@ -23,20 +23,20 @@ export function SetDisplayRow({ weight, reps, rest, setType, rpe, rir, className
 
       <span className="text-zinc-700 mx-0.5">×</span>
 
-      {/* 2. Блок повторений: фиксированная ширина 24px (w-6) */}
+      {/* Блок повторений: фиксированная ширина 24px (w-6) */}
       <span className="w-6 text-right tabular-nums font-medium text-zinc-200">
         {reps}
       </span>
       <span className="text-zinc-500 text-xs w-6">повт</span>
 
-      {/* 3. Отдых (если есть) */}
+      {/* Отдых (если есть) */}
       {rest != null && Number(rest) > 0 && (
         <span className="text-zinc-600 text-xs ml-1 flex items-center tabular-nums">
           <span className="mr-0.5">⏱</span>{rest}м
         </span>
       )}
 
-      {/* 4. Бейджи: ml-auto прижимает их к правому краю карточки */}
+      {/* Бейджи: ml-auto прижимает их к правому краю карточки */}
       <div className="ml-auto flex items-center gap-1.5">
         {isWarmup && (
           <span className="text-[10px] uppercase tracking-wider bg-zinc-800/80 text-zinc-400 px-1.5 py-0.5 rounded">

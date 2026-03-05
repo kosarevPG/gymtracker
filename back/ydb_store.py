@@ -60,6 +60,19 @@ def get_pool():
         return None
 
 
+def _safe_get(obj, *keys, default=None):
+    """Безопасное получение значения из объекта (row или dict). Поддерживает snake_case и camelCase."""
+    for key in keys:
+        try:
+            if hasattr(obj, key):
+                return getattr(obj, key, default)
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+        except (KeyError, AttributeError, TypeError):
+            pass
+    return default
+
+
 def _to_float(v, default=0.0) -> float:
     if v is None: return default
     try:
@@ -132,7 +145,7 @@ def get_all_exercises() -> Dict:
                 'weightType': str(getattr(row, 'weight_type', '') or 'Barbell'),
                 'baseWeight': _to_float(getattr(row, 'base_weight', None)),
                 'weightMultiplier': _to_float(getattr(row, 'multiplier', None), 1.0),
-                'bodyWeightFactor': _to_float(getattr(row, 'body_weight_factor', None), 1.0),
+                'bodyWeightFactor': _to_float(_safe_get(row, 'body_weight_factor', 'bodyWeightFactor'), 1.0),
                 'secondaryMuscles': str(getattr(row, 'secondary_muscles', '') or ''),
             }
             ex['allow_1rm'] = ex['weightType'] not in ('Assisted', 'Bodyweight')

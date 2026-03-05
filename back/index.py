@@ -8,8 +8,33 @@ import os
 import logging
 from urllib.parse import parse_qs, urlparse
 
+from pydantic import ValidationError
+from routes import register_routes, resolve_endpoint
+from schemas import (
+    SaveSetRequest,
+    UpdateSetRequest,
+    DeleteSetRequest,
+    CreateExerciseRequest,
+    UpdateExerciseRequest,
+    ConfirmBaselineRequest,
+    StartSessionRequest,
+    FinishSessionRequest,
+)
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+def _parse_body(body, model_class):
+    """Парсит body и валидирует через Pydantic. При ошибке возвращает (None, error_response)."""
+    try:
+        raw = json.loads(body) if body else {}
+        model = model_class.model_validate(raw)
+        return (model.model_dump(exclude_none=False), None)
+    except json.JSONDecodeError as e:
+        return (None, json_response({'error': 'Invalid JSON', 'details': str(e)}, 400))
+    except ValidationError as e:
+        return (None, json_response({'error': 'validation failed', 'details': e.errors()}, 400))
 
 
 def json_response(data, status=200):
@@ -84,12 +109,16 @@ def api_global_history(params, body, headers):
 
 def api_save_set(params, body, headers):
     """POST /api/save_set"""
+    data, err = _parse_body(body, SaveSetRequest)
+    if err:
+        return err
     try:
-        data = json.loads(body) if body else {}
         if HAS_YDB:
             result = ydb_save_set(data)
             if result.get('status') == 'success':
                 return json_response(result)
+            if result.get('status') == 'conflict':
+                return json_response({'error': result.get('error', 'conflict'), 'code': 'CONFLICT'}, 409)
             return json_response({'error': result.get('error', 'Unknown')}, 500)
         return json_response({'status': 'success', 'row_number': 0})
     except Exception as e:
@@ -99,11 +128,17 @@ def api_save_set(params, body, headers):
 
 def api_update_set(params, body, headers):
     """POST /api/update_set"""
+    data, err = _parse_body(body, UpdateSetRequest)
+    if err:
+        return err
     try:
-        data = json.loads(body) if body else {}
         if HAS_YDB:
-            ok = ydb_update_set(data)
-            return json_response({'status': 'success' if ok else 'error'})
+            result = ydb_update_set(data)
+            if result.get('status') == 'success':
+                return json_response({'status': 'success'})
+            if result.get('status') == 'conflict':
+                return json_response({'error': result.get('error', 'conflict'), 'code': 'CONFLICT'}, 409)
+            return json_response({'status': 'error', 'error': result.get('error', 'unknown')}, 500)
         return json_response({'status': 'success'})
     except Exception as e:
         logger.error(f"api_update_set: {e}", exc_info=True)
@@ -112,11 +147,13 @@ def api_update_set(params, body, headers):
 
 def api_delete_set(params, body, headers):
     """POST /api/delete_set"""
+    data, err = _parse_body(body, DeleteSetRequest)
+    if err:
+        return err
+    row_id = data.get('row_number') or data.get('id')
+    if not row_id:
+        return json_response({'error': 'Missing row_number'}, 400)
     try:
-        data = json.loads(body) if body else {}
-        row_id = data.get('row_number') or data.get('id')
-        if not row_id:
-            return json_response({'error': 'Missing row_number'}, 400)
         if HAS_YDB:
             ok = ydb_delete_set(str(row_id))
             return json_response({'status': 'success' if ok else 'error'})
@@ -128,10 +165,10 @@ def api_delete_set(params, body, headers):
 
 def api_create_exercise(params, body, headers):
     """POST /api/create_exercise"""
+    data, err = _parse_body(body, CreateExerciseRequest)
+    if err:
+        return err
     try:
-        data = json.loads(body) if body else {}
-        if not data.get('name') or not data.get('group'):
-            return json_response({'error': 'Missing name or group'}, 400)
         if HAS_YDB:
             ex = ydb_create_exercise(data['name'], data['group'])
             return json_response(ex)
@@ -143,12 +180,12 @@ def api_create_exercise(params, body, headers):
 
 def api_update_exercise(params, body, headers):
     """POST /api/update_exercise"""
+    data, err = _parse_body(body, UpdateExerciseRequest)
+    if err:
+        return err
+    ex_id = data.get('id')
+    updates = data.get('updates', data)
     try:
-        data = json.loads(body) if body else {}
-        ex_id = data.get('id')
-        if not ex_id:
-            return json_response({'error': 'Missing id'}, 400)
-        updates = data.get('updates', data)
         if HAS_YDB:
             ok = ydb_update_exercise(ex_id, updates)
             return json_response({'status': 'success' if ok else 'error'})
@@ -187,15 +224,11 @@ def api_analytics(params, body, headers):
 
 def api_confirm_baseline(params, body, headers):
     """POST /api/confirm_baseline"""
-    try:
-        data = json.loads(body) if body else {}
-        if not data.get('proposalId') or data.get('action') not in ('CONFIRM', 'SNOOZE', 'DECLINE'):
-            return json_response({'error': 'Invalid request'}, 400)
-        # TODO: логика подтверждения baseline в YDB
-        return json_response({'status': 'ok'})
-    except Exception as e:
-        logger.error(f"api_confirm_baseline: {e}", exc_info=True)
-        return json_response({'error': str(e)}, 500)
+    _, err = _parse_body(body, ConfirmBaselineRequest)
+    if err:
+        return err
+    # TODO: логика подтверждения baseline в YDB
+    return json_response({'status': 'ok'})
 
 
 def api_upload_image(params, body, headers):
@@ -206,10 +239,11 @@ def api_upload_image(params, body, headers):
 
 def api_start_session(params, body, headers):
     """POST /api/start_session — body: {body_weight?: number}"""
+    data, err = _parse_body(body, StartSessionRequest)
+    if err:
+        return err
     try:
-        data = json.loads(body) if body else {}
         body_weight = float(data.get('body_weight', 0))
-
         if HAS_YDB:
             result = ydb_start_session(body_weight)
             return json_response(result)
@@ -221,14 +255,13 @@ def api_start_session(params, body, headers):
 
 def api_finish_session(params, body, headers):
     """POST /api/finish_session — body: {session_id, srpe?: number, body_weight?: number}"""
+    data, err = _parse_body(body, FinishSessionRequest)
+    if err:
+        return err
     try:
-        data = json.loads(body) if body else {}
         session_id = data.get('session_id', '')
-        if not session_id:
-            return json_response({'error': 'Missing session_id'}, 400)
         srpe = float(data.get('srpe', 0))
         body_weight = float(data.get('body_weight', 0))
-
         if HAS_YDB:
             ok = ydb_finish_session(session_id, srpe, body_weight)
             return json_response({'status': 'success' if ok else 'error'})
@@ -267,24 +300,24 @@ OPTIONS_RESPONSE = {"statusCode": 200, "headers": HEADERS, "body": ""}
 # Секретный токен (из переменной окружения)
 AUTH_TOKEN = os.environ.get('AUTH_TOKEN', '')
 
-# Маршрутизатор
-ROUTES = {
-    'init': ('GET', api_init),
-    'history': ('GET', api_history),
-    'global_history': ('GET', api_global_history),
-    'save_set': ('POST', api_save_set),
-    'update_set': ('POST', api_update_set),
-    'delete_set': ('POST', api_delete_set),
-    'create_exercise': ('POST', api_create_exercise),
-    'update_exercise': ('POST', api_update_exercise),
-    'ping': ('GET', api_ping),
-    'analytics': ('GET', api_analytics),
-    'confirm_baseline': ('POST', api_confirm_baseline),
-    'upload_image': ('POST', api_upload_image),
-    'start_session': ('POST', api_start_session),
-    'finish_session': ('POST', api_finish_session),
-    'export_csv': ('GET', api_export_csv),
-}
+# Маршрутизатор (декларативная регистрация)
+ROUTES = register_routes({
+    'init': api_init,
+    'history': api_history,
+    'global_history': api_global_history,
+    'save_set': api_save_set,
+    'update_set': api_update_set,
+    'delete_set': api_delete_set,
+    'create_exercise': api_create_exercise,
+    'update_exercise': api_update_exercise,
+    'ping': api_ping,
+    'analytics': api_analytics,
+    'confirm_baseline': api_confirm_baseline,
+    'upload_image': api_upload_image,
+    'start_session': api_start_session,
+    'finish_session': api_finish_session,
+    'export_csv': api_export_csv,
+})
 
 
 def handler(event, context):
@@ -338,12 +371,7 @@ def handler(event, context):
         if not url_param:
             url_param = '/api/ping'
 
-        # /api/endpoint -> endpoint
-        if '/api/' in url_param:
-            endpoint = url_param.split('/api/')[-1].split('?')[0].strip('/')
-        else:
-            endpoint = 'ping'
-
+        endpoint = resolve_endpoint(url_param)
         method, handler_fn = ROUTES.get(endpoint, (None, None))
         if not handler_fn:
             return json_response({'error': f'Route not found: {endpoint}'}, 404)

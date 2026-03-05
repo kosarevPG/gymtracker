@@ -49,3 +49,13 @@ python run_migration_unified.py
 ```
 
 Перед запуском выполните `run_migration_analytics.py` (добавление колонок). После миграции удалите `YDB_LOG_TABLE` из переменных окружения и перезадеплойте Cloud Function.
+
+## Вторичные индексы (run_migration_indexes.py)
+
+Ускоряет запросы `WHERE date >= ...` и `WHERE exercise_id = ...`:
+
+```bash
+python run_migration_indexes.py
+```
+
+Индексы строятся асинхронно, таблица остаётся доступной.

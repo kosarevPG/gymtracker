@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useExerciseHistory } from '../hooks';
 import { AlertTriangle, Activity, BarChart3, Download } from 'lucide-react';
 import { motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
@@ -6,6 +8,7 @@ import { jsPDF } from 'jspdf';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, Button } from '../ui';
 import { ScreenHeader } from '../components/ScreenHeader';
+import { AnalyticsSkeleton } from '../components/AnalyticsSkeleton';
 import { api } from '../api';
 import type { Exercise } from '../types';
 
@@ -80,16 +83,52 @@ export interface AnalyticsScreenProps {
   onBack: () => void;
 }
 
+function buildVolumeE1rmPoints(history: { date: string; sets?: { weight: number; reps: number; set_type?: string }[] }[], period: number): VolumeE1rmPoint[] {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - period);
+  const cutoffStr = cutoff.toISOString().slice(0, 10).replace(/-/g, '.');
+  const points: VolumeE1rmPoint[] = [];
+  for (const day of history) {
+    const d = day.date.replace(/-/g, '.');
+    if (d < cutoffStr) continue;
+    let volume = 0;
+    let maxE1rm = 0;
+    for (const s of day.sets || []) {
+      const st = (s.set_type || '').toLowerCase();
+      if (st && st !== 'working') continue;
+      const w = Number(s.weight) || 0;
+      const r = Number(s.reps) || 0;
+      volume += w * r;
+      const e = calcE1rm(w, r);
+      if (e > maxE1rm) maxE1rm = e;
+    }
+    points.push({ date: d, volume, e1rm: maxE1rm });
+  }
+  points.sort((a, b) => a.date.localeCompare(b.date));
+  return points;
+}
+
 export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps) => {
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(14);
-  const [apiError, setApiError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [selectedExerciseId, setSelectedExerciseId] = useState<string>('');
-  const [volumeE1rmData, setVolumeE1rmData] = useState<VolumeE1rmPoint[]>([]);
-  const [chartLoading, setChartLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  const { data, isLoading: loading, error: apiError } = useQuery({
+    queryKey: ['analytics', period, retry],
+    queryFn: async () => {
+      const d = await api.getAnalytics(period);
+      if (!d) throw new Error('Не удалось загрузить данные');
+      if (d && 'error' in d) throw new Error((d as { error?: string }).error || 'Ошибка API');
+      return d as AnalyticsData;
+    },
+  });
+
+  const { history: exerciseHistory, loading: chartLoading } = useExerciseHistory(selectedExerciseId || null);
+  const volumeE1rmData = useMemo(
+    () => (exerciseHistory.length > 0 ? buildVolumeE1rmPoints(exerciseHistory, period) : []),
+    [exerciseHistory, period]
+  );
 
   const handleExportPDF = async () => {
     setIsExporting(true);
@@ -108,57 +147,6 @@ export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps
       setIsExporting(false);
     }
   };
-
-  useEffect(() => {
-    setLoading(true);
-    setApiError(null);
-    api.getAnalytics(period).then((d: AnalyticsData | { error?: string } | null) => {
-      if (!d) {
-        setData(null);
-        setApiError('Не удалось загрузить данные');
-      } else if (d && 'error' in d) {
-        setData(null);
-        setApiError((d as { error?: string }).error || 'Ошибка API');
-      } else {
-        setData(d as AnalyticsData);
-      }
-      setLoading(false);
-    });
-  }, [period, retry]);
-
-  useEffect(() => {
-    if (!selectedExerciseId) {
-      setVolumeE1rmData([]);
-      return;
-    }
-    setChartLoading(true);
-    api.getHistory(selectedExerciseId).then((res: { history?: { date: string; sets: { weight: number; reps: number; set_type?: string }[] }[] }) => {
-      const history = res?.history || [];
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - period);
-      const cutoffStr = cutoff.toISOString().slice(0, 10).replace(/-/g, '.');
-      const points: VolumeE1rmPoint[] = [];
-      for (const day of history) {
-        const d = day.date.replace(/-/g, '.');
-        if (d < cutoffStr) continue;
-        let volume = 0;
-        let maxE1rm = 0;
-        for (const s of day.sets || []) {
-          const st = (s.set_type || '').toLowerCase();
-          if (st && st !== 'working') continue;
-          const w = Number(s.weight) || 0;
-          const r = Number(s.reps) || 0;
-          volume += w * r;
-          const e = calcE1rm(w, r);
-          if (e > maxE1rm) maxE1rm = e;
-        }
-        points.push({ date: d, volume, e1rm: maxE1rm });
-      }
-      points.sort((a, b) => a.date.localeCompare(b.date));
-      setVolumeE1rmData(points);
-      setChartLoading(false);
-    });
-  }, [selectedExerciseId, period]);
 
   const muscleList = useMemo(() => {
     const sets = data?.muscleSets || {};
@@ -189,7 +177,7 @@ export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps
             </button>
           ))}
         </div>
-        {!loading && !apiError && (
+        {!loading && !apiError?.message && (
           <div className="px-4 pb-3">
             <Button
               variant="secondary"
@@ -205,13 +193,13 @@ export const AnalyticsScreen = ({ exercises = [], onBack }: AnalyticsScreenProps
       </div>
 
       {loading ? (
-        <div className="p-4 space-y-4">
-          {[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-zinc-900 rounded-2xl animate-pulse" />)}
+        <div className="p-4">
+          <AnalyticsSkeleton />
         </div>
       ) : apiError ? (
         <div className="p-4 text-center text-red-400 mt-20">
           <AlertTriangle className="w-16 h-16 mx-auto mb-4 opacity-70" />
-          <p className="font-medium">{apiError}</p>
+          <p className="font-medium">{apiError.message}</p>
           <Button variant="secondary" onClick={() => setRetry(r => r + 1)} className="mt-4">Повторить</Button>
         </div>
       ) : (

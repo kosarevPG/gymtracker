@@ -1,22 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link as LinkIcon, Activity } from 'lucide-react';
+import type { GlobalWorkoutSession } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '../ui';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { HistorySetRow } from '../components/HistorySetRow';
 import { SetDisplayRow } from '../components/SetDisplayRow';
-import { api } from '../api';
-import type { GlobalWorkoutSession } from '../types';
+import { HistorySkeleton } from '../components/HistorySkeleton';
+import { useWorkoutHistory, useLogSet } from '../hooks';
 
 export interface HistoryScreenProps {
   onBack: () => void;
 }
 
 export const HistoryScreen = ({ onBack }: HistoryScreenProps) => {
-  const [history, setHistory] = useState<GlobalWorkoutSession[]>([]);
+  const { history, loading, refreshHistory } = useWorkoutHistory();
+  const { updateSet, deleteSet } = useLogSet();
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
-  const refreshHistory = () => api.getGlobalHistory().then(data => setHistory(data));
-  useEffect(() => { refreshHistory(); }, []);
 
   const isExpanded = (id: string) => expandedIds.includes(id);
   const allExpanded = history.length > 0 && expandedIds.length === history.length;
@@ -25,14 +25,16 @@ export const HistoryScreen = ({ onBack }: HistoryScreenProps) => {
   };
   const expandOrCollapseAll = () => {
     if (allExpanded) setExpandedIds([]);
-    else setExpandedIds(history.map(w => w.id));
+    else setExpandedIds(history.map((w: GlobalWorkoutSession) => w.id));
   };
 
   return (
     <motion.div initial={{ x: 50, opacity: 0 }} animate={{ x: 0, opacity: 1 }} className="min-h-screen bg-zinc-950">
       <ScreenHeader title="История" onBack={onBack} />
       <div className="p-4 space-y-4 pb-20">
-        {history.length > 0 && (
+        {loading && <HistorySkeleton />}
+        {!loading && history.length > 0 && (
+          <>
           <div className="flex justify-center pb-2">
             <button
               onClick={expandOrCollapseAll}
@@ -41,8 +43,7 @@ export const HistoryScreen = ({ onBack }: HistoryScreenProps) => {
               {allExpanded ? 'Свернуть все тренировки' : 'Развернуть все тренировки'}
             </button>
           </div>
-        )}
-        {history.map(w => (
+        {history.map((w: GlobalWorkoutSession) => (
           <Card key={w.id} className="overflow-hidden">
             <div onClick={() => toggleWorkout(w.id)} className="p-4 flex items-center justify-between cursor-pointer active:bg-zinc-800/50">
               <div>
@@ -90,25 +91,25 @@ export const HistoryScreen = ({ onBack }: HistoryScreenProps) => {
                                 return hasId ? (
                                   <HistorySetRow
                                     key={s.id || j}
-                                    set={{ id: s.id!, weight, reps, rest, exerciseId: s.exerciseId, setGroupId: s.setGroupId, order: s.order, set_type: (s as any).set_type, rpe: (s as any).rpe, rir: (s as any).rir }}
+                                    set={{ id: s.id!, weight, reps, rest, exerciseId: s.exerciseId, setGroupId: s.setGroupId, order: s.order, set_type: (s as any).set_type, rpe: (s as any).rpe, rir: (s as any).rir, updated_at: (s as { updated_at?: string }).updated_at }}
                                     className={`py-2 px-3 ${setBorderClass}`}
                                     onSave={async (updates) => {
-                                      const res = await api.updateSet({
-                                        row_number: s.id,
-                                        exercise_id: s.exerciseId || ex.exerciseId,
+                                      const res = await updateSet({
+                                        row_number: s.id!,
+                                        exercise_id: s.exerciseId || ex.exerciseId || '',
                                         set_group_id: s.setGroupId || ex.setGroupId || '',
                                         order: s.order ?? j,
                                         weight: updates.weight,
-                                        input_weight: updates.weight,
                                         reps: updates.reps,
-                                        rest: updates.rest
+                                        rest: updates.rest,
+                                        updated_at: (s as { updated_at?: string }).updated_at
                                       });
-                                      if (res?.status === 'success') refreshHistory();
+                                      if (res?.status === 'conflict') {
+                                        alert((res as { error?: string }).error || 'Запись изменена на другом устройстве. Обновите страницу.');
+                                        refreshHistory();
+                                      }
                                     }}
-                                    onDelete={s.id ? async () => {
-                                      const res = await api.deleteSet(s.id!);
-                                      if (res?.status === 'success') refreshHistory();
-                                    } : undefined}
+                                    onDelete={s.id ? async () => { await deleteSet(s.id!); } : undefined}
                                   />
                                 ) : (
                                   <SetDisplayRow key={j} weight={weight} reps={reps} rest={rest} setType={(s as any).set_type} rpe={(s as any).rpe} rir={(s as any).rir} className={`py-2 px-3 ${setBorderClass}`} />
@@ -129,7 +130,9 @@ export const HistoryScreen = ({ onBack }: HistoryScreenProps) => {
             </AnimatePresence>
           </Card>
         ))}
-        {history.length === 0 && <div className="text-center text-zinc-500 py-10 flex flex-col items-center"><Activity className="w-12 h-12 mb-3 opacity-20" /><p>Нет данных</p></div>}
+          </>
+        )}
+        {!loading && history.length === 0 && <div className="text-center text-zinc-500 py-10 flex flex-col items-center"><Activity className="w-12 h-12 mb-3 opacity-20" /><p>Нет данных</p></div>}
       </div>
     </motion.div>
   );

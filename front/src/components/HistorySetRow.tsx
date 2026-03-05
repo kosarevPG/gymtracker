@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Pencil, Check, Trash2 } from 'lucide-react';
 import { SetDisplayRow } from './SetDisplayRow';
 
@@ -13,13 +13,14 @@ interface HistorySet {
   set_type?: string;
   rpe?: number;
   rir?: number;
+  updated_at?: string;
 }
 
 interface HistorySetRowProps {
   set: HistorySet;
   className?: string;
   onSave: (updates: { weight: number; reps: number; rest: number }) => Promise<void>;
-  onDelete?: () => Promise<void>;
+  onDelete?: () => void | Promise<void>;
 }
 
 export function HistorySetRow({ set, className = '', onSave, onDelete }: HistorySetRowProps) {
@@ -49,19 +50,29 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
     }
   };
 
+  const repsRef = useRef<HTMLInputElement>(null);
+  const weightRef = useRef<HTMLInputElement>(null);
+
   if (isEditing) {
     return (
       <div className={`flex items-center gap-2 p-3 ${className}`}>
         <input
+          ref={weightRef}
           type="number"
+          inputMode="decimal"
+          pattern="[0-9.]*"
           value={weight}
           onChange={(e) => setWeight(e.target.value)}
+          onBlur={() => { if (weight && repsRef.current) repsRef.current.focus(); }}
           className="w-16 h-10 bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm"
           placeholder="кг"
         />
         <span className="text-zinc-500">×</span>
         <input
+          ref={repsRef}
           type="number"
+          inputMode="numeric"
+          pattern="[0-9]*"
           value={reps}
           onChange={(e) => setReps(e.target.value)}
           className="w-14 h-10 bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm"
@@ -70,6 +81,8 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
         <span className="text-zinc-500 text-sm">отдых</span>
         <input
           type="number"
+          inputMode="decimal"
+          pattern="[0-9.]*"
           value={rest}
           onChange={(e) => setRest(e.target.value)}
           className="w-12 h-10 bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm"

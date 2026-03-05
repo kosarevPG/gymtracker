@@ -41,27 +41,39 @@ export const api = {
   confirmBaseline: async (proposalId: string, action: 'CONFIRM' | 'SNOOZE' | 'DECLINE') =>
     await api.request('confirm_baseline', { method: 'POST', body: JSON.stringify({ proposalId, action }) }),
 
-  saveSet: async (data: Record<string, unknown>): Promise<{ status?: string; row_number?: number; pending_id?: string; offline?: boolean } | null> => {
+  saveSet: async (data: Record<string, unknown>): Promise<{ status?: string; row_number?: number; updated_at?: string; pending_id?: string; offline?: boolean; code?: string; error?: string } | null> => {
     try {
+      const payload = { ...data };
+      if (!payload.updated_at) payload.updated_at = new Date().toISOString();
       const res = await fetch(buildApiUrl('save_set'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-        body: JSON.stringify(data)
+        body: JSON.stringify(payload)
       });
       if (res.status === 403) { handle403(); return null; }
+      if (res.status === 409) {
+        const err = await res.json().catch(() => ({}));
+        return { status: 'conflict', code: 'CONFLICT', error: err?.error || 'Конфликт при сохранении' };
+      }
       if (res.ok) return await res.json();
     } catch (e) { console.log('saveSet failed', e); }
     return { status: 'queued', pending_id: addToQueue('saveSet', data), offline: true };
   },
 
-  updateSet: async (data: Record<string, unknown>): Promise<{ status?: string; pending_id?: string; offline?: boolean } | null> => {
+  updateSet: async (data: Record<string, unknown>): Promise<{ status?: string; pending_id?: string; offline?: boolean; code?: string; error?: string } | null> => {
     try {
+      const payload = { ...data };
+      if (!payload.updated_at) payload.updated_at = new Date().toISOString();
       const res = await fetch(buildApiUrl('update_set'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-        body: JSON.stringify(data)
+        body: JSON.stringify(payload)
       });
       if (res.status === 403) { handle403(); return null; }
+      if (res.status === 409) {
+        const err = await res.json().catch(() => ({}));
+        return { status: 'conflict', code: 'CONFLICT', error: err?.error || 'Конфликт при обновлении' };
+      }
       if (res.ok) return await res.json();
     } catch (e) { console.log('updateSet failed', e); }
     return { status: 'queued', pending_id: addToQueue('updateSet', data), offline: true };

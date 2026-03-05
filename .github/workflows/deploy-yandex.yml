@@ -43,6 +43,8 @@ jobs:
           include: |
             index.py
             ydb_store.py
+            schemas.py
+            routes.py
             requirements.txt
           environment: |
             YDB_ENDPOINT=${{ secrets.YDB_ENDPOINT }}

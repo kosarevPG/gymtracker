@@ -10,6 +10,7 @@
             "deploy": "npm run build && gh-pages -d dist -r https://github.com/kosarevPG/gymtracker.git"
       },
       "dependencies": {
+            "@tanstack/react-query": "^5.90.21",
             "clsx": "^2.1.0",
             "framer-motion": "^11.18.2",
             "html2canvas": "^1.4.1",

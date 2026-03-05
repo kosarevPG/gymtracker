@@ -54,74 +54,10 @@ def get_pool():
         )
         _driver.wait(timeout=5, fail_fast=True)
         _pool = ydb.QuerySessionPool(_driver)
-        _ensure_tables(_pool)
         return _pool
     except Exception as e:
         logger.error(f"YDB init failed: {e}", exc_info=True)
         return None
-
-
-def _ensure_tables(pool) -> None:
-    """Создаёт таблицы если не существуют."""
-    pool.execute_with_retries("""
-        CREATE TABLE IF NOT EXISTS exercises (
-            id Utf8,
-            name Utf8,
-            muscle_group Utf8,
-            secondary_muscles Utf8,
-            description Utf8,
-            image_url Utf8,
-            image_url2 Utf8,
-            equipment_type Utf8,
-            exercise_type Utf8,
-            weight_type Utf8,
-            base_weight Double,
-            multiplier Double,
-            body_weight_factor Double,
-            PRIMARY KEY (id)
-        );
-    """)
-    pool.execute_with_retries("""
-        CREATE TABLE IF NOT EXISTS log (
-            id Utf8,
-            date Utf8,
-            exercise_id Utf8,
-            exercise_name Utf8,
-            input_weight Double,
-            total_weight Double,
-            reps Uint32,
-            rest Double,
-            set_group_id Utf8,
-            session_id Utf8,
-            note Utf8,
-            ord Uint32,
-            set_type Utf8,
-            rpe Double,
-            rir Uint32,
-            is_low_confidence Bool,
-            PRIMARY KEY (id)
-        );
-    """)
-    pool.execute_with_retries("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            id Utf8,
-            date Utf8,
-            start_ts Timestamp,
-            end_ts Timestamp,
-            duration_sec Int32,
-            srpe Double,
-            body_weight Double,
-            PRIMARY KEY (id)
-        );
-    """)
-    pool.execute_with_retries("""
-        CREATE TABLE IF NOT EXISTS exercise_muscles (
-            exercise_id Utf8,
-            muscle_group Utf8,
-            weight_factor Double,
-            PRIMARY KEY (exercise_id, muscle_group)
-        );
-    """)
 
 
 def _to_float(v, default=0.0) -> float:
@@ -137,6 +73,36 @@ def _to_int(v, default=0) -> int:
         return int(_to_float(v, default))
     except (ValueError, TypeError):
         return default
+
+
+def _parse_iso_timestamp(s: Optional[str]) -> Optional[datetime]:
+    """Парсит ISO timestamp от клиента. Возвращает datetime в UTC или None."""
+    if not s or not str(s).strip():
+        return None
+    try:
+        s = str(s).replace('Z', '+00:00').replace('z', '+00:00')
+        return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def _db_ts_to_datetime(ts) -> Optional[datetime]:
+    """Конвертирует YDB Timestamp в datetime для сравнения."""
+    if ts is None:
+        return None
+    if hasattr(ts, 'timestamp'):
+        return datetime.fromtimestamp(ts.timestamp(), tz=timezone.utc)
+    try:
+        us = int(ts)
+        return datetime.fromtimestamp(us / 1_000_000, tz=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def _ts_to_iso(ts) -> Optional[str]:
+    """Конвертирует YDB Timestamp в ISO строку для API."""
+    dt = _db_ts_to_datetime(ts)
+    return dt.isoformat() if dt else None
 
 
 # --- Exercises ---
@@ -354,14 +320,27 @@ def save_set(data: Dict) -> Dict:
     _, is_low = calculate_e1rm(total_wt, reps)
     if data.get('is_low_confidence') is not None:
         is_low = bool(data.get('is_low_confidence'))
-    params = {
-        "$id": log_id, "$date_val": now, "$ex_id": ex_id, "$ex_name": ex_name,
-        "$input_wt": input_wt, "$total_wt": total_wt, "$reps": reps, "$rest": rest,
-        "$set_group": set_group, "$session_id": session_id_val, "$note": note,
-        "$ord_val": ord_val, "$set_type": set_type or "working",
-        "$rpe": rpe_val, "$rir": rir_val, "$is_low": is_low,
-    }
+    client_updated = _parse_iso_timestamp(data.get('updated_at'))
     try:
+        # LWW: проверка конфликта при обновлении существующей записи
+        if client_updated is not None:
+            r = pool.execute_with_retries("""
+                DECLARE $id AS Utf8;
+                SELECT id, updated_at FROM log WHERE id = $id;
+            """, {"$id": log_id})
+            if r and r[0].rows:
+                row = r[0].rows[0]
+                db_updated = _db_ts_to_datetime(getattr(row, 'updated_at', None))
+                if db_updated is not None and db_updated > client_updated:
+                    return {"status": "conflict", "error": "Запись изменена на другом устройстве"}
+        now_ts = int(datetime.now(timezone.utc).timestamp() * 1_000_000)
+        params = {
+            "$id": log_id, "$date_val": now, "$ex_id": ex_id, "$ex_name": ex_name,
+            "$input_wt": input_wt, "$total_wt": total_wt, "$reps": reps, "$rest": rest,
+            "$set_group": set_group, "$session_id": session_id_val, "$note": note,
+            "$ord_val": ord_val, "$set_type": set_type or "working",
+            "$rpe": rpe_val, "$rir": rir_val, "$is_low": is_low, "$updated_at": now_ts,
+        }
         pool.execute_with_retries("""
             DECLARE $id AS Utf8;
             DECLARE $date_val AS Utf8;
@@ -379,39 +358,54 @@ def save_set(data: Dict) -> Dict:
             DECLARE $rpe AS Double?;
             DECLARE $rir AS Uint32?;
             DECLARE $is_low AS Bool;
-            UPSERT INTO log (id, date, exercise_id, exercise_name, input_weight, total_weight, reps, rest, set_group_id, session_id, note, ord, set_type, rpe, rir, is_low_confidence)
-            VALUES ($id, $date_val, $ex_id, $ex_name, $input_wt, $total_wt, $reps, $rest, $set_group, $session_id, $note, $ord_val, $set_type, $rpe, $rir, $is_low);
+            DECLARE $updated_at AS Timestamp?;
+            UPSERT INTO log (id, date, exercise_id, exercise_name, input_weight, total_weight, reps, rest, set_group_id, session_id, note, ord, set_type, rpe, rir, is_low_confidence, updated_at)
+            VALUES ($id, $date_val, $ex_id, $ex_name, $input_wt, $total_wt, $reps, $rest, $set_group, $session_id, $note, $ord_val, $set_type, $rpe, $rir, $is_low, $updated_at);
         """, params)
-        return {"status": "success", "row_number": log_id}
+        now_iso = datetime.now(timezone.utc).isoformat()
+        return {"status": "success", "row_number": log_id, "updated_at": now_iso}
     except Exception as e:
         logger.error(f"save_set: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
 
 
-def update_set(data: Dict) -> bool:
-    """Обновляет подход по id (row_number)."""
+def update_set(data: Dict) -> Dict:
+    """Обновляет подход по id (row_number). Возвращает {status: success|conflict|error}."""
     pool = get_pool()
     if not pool:
-        return False
+        return {"status": "error", "error": "YDB not configured"}
     row_id = str(data.get('row_number', ''))
     if not row_id:
-        return False
+        return {"status": "error", "error": "row_number required"}
     total_wt = _to_float(data.get('weight'))
     reps = _to_int(data.get('reps'))
     rest = _to_float(data.get('rest'))
+    client_updated = _parse_iso_timestamp(data.get('updated_at'))
     try:
+        if client_updated is not None:
+            r = pool.execute_with_retries("""
+                DECLARE $row_id AS Utf8;
+                SELECT id, updated_at FROM log WHERE id = $row_id;
+            """, {"$row_id": row_id})
+            if r and r[0].rows:
+                row = r[0].rows[0]
+                db_updated = _db_ts_to_datetime(getattr(row, 'updated_at', None))
+                if db_updated is not None and db_updated > client_updated:
+                    return {"status": "conflict", "error": "Запись изменена на другом устройстве"}
+        now_ts = int(datetime.now(timezone.utc).timestamp() * 1_000_000)
         pool.execute_with_retries("""
             DECLARE $row_id AS Utf8;
             DECLARE $total_wt AS Double;
             DECLARE $reps AS Uint32;
             DECLARE $rest AS Double;
-            UPDATE log SET total_weight = $total_wt, reps = $reps, rest = $rest
+            DECLARE $updated_at AS Timestamp?;
+            UPDATE log SET total_weight = $total_wt, reps = $reps, rest = $rest, updated_at = $updated_at
             WHERE id = $row_id;
-        """, {"$row_id": row_id, "$total_wt": total_wt, "$reps": reps, "$rest": rest})
-        return True
+        """, {"$row_id": row_id, "$total_wt": total_wt, "$reps": reps, "$rest": rest, "$updated_at": now_ts})
+        return {"status": "success"}
     except Exception as e:
         logger.error(f"update_set: {e}", exc_info=True)
-        return False
+        return {"status": "error", "error": str(e)}
 
 
 def delete_set(row_id: str) -> bool:
@@ -750,7 +744,9 @@ def get_exercise_history(exercise_id: str, limit: int = 50) -> Dict:
             set_type_val = getattr(row, 'set_type', None) or None
             rpe_val = getattr(row, 'rpe', None)
             rir_val = getattr(row, 'rir', None)
+            upd = getattr(row, 'updated_at', None)
             items.append({
+                'id': getattr(row, 'id', ''),
                 'date': _parse_date_val(raw_date),
                 'weight': _to_float(getattr(row, 'total_weight', None)),
                 'reps': _to_int(getattr(row, 'reps', 0)),
@@ -760,6 +756,7 @@ def get_exercise_history(exercise_id: str, limit: int = 50) -> Dict:
                 'set_type': str(set_type_val) if set_type_val else None,
                 'rpe': _to_float(rpe_val) if rpe_val is not None and str(rpe_val).strip() != '' else None,
                 'rir': _to_int(rir_val) if rir_val is not None and str(rir_val).strip() != '' else None,
+                'updated_at': _ts_to_iso(upd),
             })
         grouped = {}
         for item in items:
@@ -783,7 +780,7 @@ def get_global_history(limit_rows: int = 1500) -> List[Dict]:
     try:
         result_sets = pool.execute_with_retries("""
             DECLARE $limit_rows AS Uint64;
-            SELECT id, date, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir FROM log
+            SELECT id, date, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir, updated_at FROM log
             ORDER BY date DESC LIMIT $limit_rows;
         """, {"$limit_rows": limit_rows})
         ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
@@ -813,6 +810,7 @@ def get_global_history(limit_rows: int = 1500) -> List[Dict]:
                 "set_type": str(set_type_val) if set_type_val else None,
                 "rpe": _to_float(rpe_val) if rpe_val is not None and str(rpe_val).strip() != '' else None,
                 "rir": _to_int(rir_val) if rir_val is not None and str(rir_val).strip() != '' else None,
+                "updated_at": _ts_to_iso(getattr(row, 'updated_at', None)),
             })
         result = []
         for date_val, day_data in sorted(days.items(), key=lambda x: x[0], reverse=True):
@@ -833,7 +831,8 @@ def get_global_history(limit_rows: int = 1500) -> List[Dict]:
                     "rest": ex["rest"],
                     "set_type": ex.get("set_type"),
                     "rpe": ex.get("rpe"),
-                    "rir": ex.get("rir")
+                    "rir": ex.get("rir"),
+                    "updated_at": ex.get("updated_at"),
                 })
             set_group_count = {}
             for ex_data in exercises_grouped.values():

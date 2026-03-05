@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Search, Plus, Check, Trash2, StickyNote, ChevronDown, Calendar, 
   ArrowLeft, Pencil, Trophy, Link as LinkIcon,
@@ -15,6 +16,7 @@ import { api } from './api';
 import { Card, Button, Input, Modal } from './ui';
 import type { Screen, Exercise, WorkoutSet, ExerciseSessionData } from './types';
 import { HomeScreen, ExercisesListScreen, HistoryScreen, AnalyticsScreen, SettingsScreen } from './screens';
+import { useExerciseHistory } from './hooks';
 
 // --- HOOKS ---
 
@@ -224,7 +226,8 @@ const NoteWidget = ({ initialValue, onChange }: any) => {
   );
 };
 
-const HistoryListModal = ({ isOpen, onClose, history, exerciseName }: any) => {
+const HistoryListModal = ({ isOpen, onClose, exerciseId, exerciseName }: { isOpen: boolean; onClose: () => void; exerciseId: string | null; exerciseName: string }) => {
+  const { history } = useExerciseHistory(isOpen ? exerciseId : null);
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`История: ${exerciseName}`}>
       <div className="space-y-6">
@@ -290,6 +293,7 @@ const SET_TYPE_ORDER: Array<'warmup' | 'working' | 'drop' | 'failure'> = ['warmu
 const SET_TYPE_LABEL: Record<string, string> = { warmup: 'W', working: 'R', drop: 'D', failure: 'F' };
 
 const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight, weightMultiplier, bodyWeightFactor, onUpdate, onDelete, onComplete, onToggleEdit }: { set: any; equipmentType?: string; weightType?: string; baseWeight?: number; weightMultiplier?: number; bodyWeightFactor?: number; onUpdate: (sid: string, field: string, value: string | number) => void; onDelete: (sid: string) => void; onComplete: (sid: string) => void; onToggleEdit: (sid: string) => void }) => {
+  const repsRef = useRef<HTMLInputElement>(null);
   const weightType = getWeightInputType(equipmentType, weightTypeFromRef);
   const formula = WEIGHT_FORMULAS[weightType];
   const effectiveWeight = calcEffectiveWeight(set.weight || '', weightType, undefined, baseWeight, weightMultiplier, bodyWeightFactor);
@@ -318,6 +322,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
         <input 
           type="number" 
           inputMode="decimal" 
+          pattern="[0-9.]*"
           min="0"
           step="0.5"
           placeholder={formula.placeholder} 
@@ -328,6 +333,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
             const num = parseFloat(v);
             if (!isNaN(num) && num >= 0) onUpdate(set.id, 'weight', v);
           }}
+          onBlur={() => { if (set.weight && repsRef.current) repsRef.current.focus(); }}
           onFocus={e => e.target.select()}
           className="w-full h-12 bg-zinc-800 rounded-xl text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums" 
         />
@@ -362,8 +368,10 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
         </div>
       </div>
       <input 
+        ref={repsRef}
         type="tel" 
         inputMode="numeric" 
+        pattern="[0-9]*"
         placeholder="0" 
         value={set.reps} 
         onChange={e => onUpdate(set.id, 'reps', e.target.value)}
@@ -373,6 +381,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
       <input 
         type="number" 
         inputMode="decimal" 
+        pattern="[0-9.]*"
         placeholder="0" 
         value={set.rest} 
         onChange={e => onUpdate(set.id, 'rest', e.target.value)}
@@ -451,7 +460,7 @@ const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompl
         <button onClick={() => setShowHistoryModal(true)} className="p-2 bg-zinc-800/50 rounded-lg text-zinc-400 hover:text-blue-500 ml-2"><Calendar className="w-5 h-5" /></button>
       </div>
       <NoteWidget initialValue={exerciseData.note} onChange={onNoteChange} />
-      <HistoryListModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} history={exerciseData.history} exerciseName={exerciseData.exercise.name} />
+      <HistoryListModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} exerciseId={exerciseData.exercise.id} exerciseName={exerciseData.exercise.name} />
       <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 mb-2 px-1">
         <div className="w-10" />
         <div className="text-[10px] text-center text-zinc-500 font-bold uppercase">{WEIGHT_FORMULAS[getWeightInputType(exerciseData.exercise.equipmentType, exerciseData.exercise.weightType)].label}</div>
@@ -1165,16 +1174,17 @@ const App = () => {
     return () => clearInterval(pingInterval);
   }, [isAuthenticated]);
 
-  useEffect(() => { 
-    if (isAuthenticated) {
-        api.getInit().then(d => { 
-            if(d && d.groups) {
-                setGroups(sortGroups(d.groups)); 
-                setAllExercises(d.exercises); 
-            }
-        }); 
+  const { data: initData } = useQuery({
+    queryKey: ['init'],
+    queryFn: () => api.getInit(),
+    enabled: isAuthenticated,
+  });
+  useEffect(() => {
+    if (initData && initData.groups) {
+      setGroups(sortGroups(initData.groups));
+      setAllExercises(initData.exercises || []);
     }
-  }, [isAuthenticated]);
+  }, [initData]);
 
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const filteredExercises = useMemo(() => {
@@ -1184,10 +1194,12 @@ const App = () => {
     return list.sort((a, b) => a.name.localeCompare(b.name, 'ru', { sensitivity: 'base' }));
   }, [allExercises, selectedGroup, debouncedSearchQuery]);
 
+  const queryClient = useQueryClient();
   const handleCreate = async () => {
       if (!newName || !newGroup) return;
       const newEx = await api.createExercise(newName, newGroup);
       if (newEx) {
+        queryClient.invalidateQueries({ queryKey: ['init'] });
         setAllExercises(p => [...p, newEx]);
         setIsCreateModalOpen(false);
         setNewName('');
@@ -1201,6 +1213,7 @@ const App = () => {
       setAllExercises(p => p.map(ex => ex.id === id ? { ...ex, ...updates } : ex));
       const result = await api.updateExercise(id, updates);
       if (result) {
+          queryClient.invalidateQueries({ queryKey: ['init'] });
           const freshData = await api.getInit();
           if (freshData && freshData.exercises) setAllExercises(freshData.exercises);
           notify('success');

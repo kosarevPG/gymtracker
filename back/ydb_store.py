@@ -7,12 +7,13 @@ YDB хранилище для GymTracker.
 
 import csv
 import io
-import json
 import logging
 import os
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional, Any
+
+import ydb
 
 logger = logging.getLogger(__name__)
 
@@ -138,22 +139,10 @@ def _to_int(v, default=0) -> int:
         return default
 
 
-def _row_val(row, *keys, default=''):
-    """Берёт значение из row по первому найденному ключу (поддержка разных схем)."""
-    for k in keys:
-        try:
-            v = getattr(row, k, None)
-            if v is not None:
-                return v
-        except (AttributeError, KeyError):
-            pass
-    return default
-
-
 # --- Exercises ---
 
 def get_all_exercises() -> Dict:
-    """Возвращает {groups: [...], exercises: [...]}. Поддерживает разные схемы колонок."""
+    """Возвращает {groups: [...], exercises: [...]}."""
     pool = get_pool()
     if not pool:
         return {"groups": DEFAULT_GROUPS, "exercises": []}
@@ -162,23 +151,23 @@ def get_all_exercises() -> Dict:
         exercises = []
         groups = set()
         for row in result_sets[0].rows:
-            ex_id = _row_val(row, 'id', 'ID')
-            name = _row_val(row, 'name', 'Name')
-            muscle = _row_val(row, 'muscle_group', 'muscleGroup', 'Muscle_Group', 'Muscle Group')
+            ex_id = getattr(row, 'id', '')
+            name = getattr(row, 'name', '')
+            muscle = getattr(row, 'muscle_group', '')
             ex = {
                 'id': str(ex_id),
                 'name': str(name),
                 'muscleGroup': str(muscle) if muscle else '',
-                'description': str(_row_val(row, 'description', 'Description', 'desc')) or '',
-                'imageUrl': str(_row_val(row, 'image_url', 'imageUrl', 'Image_URL')) or '',
-                'imageUrl2': str(_row_val(row, 'image_url2', 'imageUrl2', 'Image_URL2')) or '',
-                'equipmentType': str(_row_val(row, 'equipment_type', 'equipmentType', 'Equipment_Type')) or 'barbell',
-                'exerciseType': str(_row_val(row, 'exercise_type', 'exerciseType', 'Exercise_Type')) or 'compound',
-                'weightType': str(_row_val(row, 'weight_type', 'weightType', 'Weight_Type')) or 'Barbell',
-                'baseWeight': _to_float(_row_val(row, 'base_weight', 'baseWeight', 'Base_Wt')),
-                'weightMultiplier': _to_float(_row_val(row, 'weight_multiplier', 'weightMultiplier', 'Multiplier', 'multiplier'), 1.0),
-                'bodyWeightFactor': _to_float(_row_val(row, 'body_weight_factor', 'bodyWeightFactor'), 1.0),
-                'secondaryMuscles': str(_row_val(row, 'secondary_muscles', 'secondaryMuscles', 'Secondary_Muscles') or ''),
+                'description': str(getattr(row, 'description', '') or ''),
+                'imageUrl': str(getattr(row, 'image_url', '') or ''),
+                'imageUrl2': str(getattr(row, 'image_url2', '') or ''),
+                'equipmentType': str(getattr(row, 'equipment_type', '') or 'barbell'),
+                'exerciseType': str(getattr(row, 'exercise_type', '') or 'compound'),
+                'weightType': str(getattr(row, 'weight_type', '') or 'Barbell'),
+                'baseWeight': _to_float(getattr(row, 'base_weight', None)),
+                'weightMultiplier': _to_float(getattr(row, 'multiplier', None), 1.0),
+                'bodyWeightFactor': _to_float(getattr(row, 'body_weight_factor', None), 1.0),
+                'secondaryMuscles': str(getattr(row, 'secondary_muscles', '') or ''),
             }
             ex['allow_1rm'] = ex['weightType'] not in ('Assisted', 'Bodyweight')
             if ex['muscleGroup']:
@@ -203,12 +192,24 @@ def create_exercise(name: str, group: str, equipment_type: str = None, exercise_
     base_wt = 0.0
     mult = 1
     try:
-        pool.execute_with_retries(f"""
+        pool.execute_with_retries("""
+            DECLARE $id AS Utf8;
+            DECLARE $name AS Utf8;
+            DECLARE $group AS Utf8;
+            DECLARE $eq AS Utf8;
+            DECLARE $ex_t AS Utf8;
+            DECLARE $w_type AS Utf8;
             UPSERT INTO exercises (id, name, muscle_group, secondary_muscles, description, image_url, image_url2,
                 equipment_type, exercise_type, weight_type, base_weight, multiplier)
-            VALUES ("{ex_id}", "{_esc(name)}", "{_esc(group)}", "", "", "", "",
-                "{_esc(eq)}", "{_esc(ex_t)}", "{_esc(w_type)}", {base_wt}, {mult});
-        """)
+            VALUES ($id, $name, $group, "", "", "", "", $eq, $ex_t, $w_type, 0.0, 1);
+        """, {
+            "$id": ex_id,
+            "$name": name or "",
+            "$group": group or "",
+            "$eq": eq,
+            "$ex_t": ex_t,
+            "$w_type": w_type,
+        })
         logger.info(f"create_exercise: saved id={ex_id} name={name}")
     except Exception as e:
         logger.error(f"create_exercise UPSERT failed: {e}", exc_info=True)
@@ -231,26 +232,40 @@ def update_exercise(ex_id: str, data: Dict) -> bool:
         primary_muscle = primary_muscle.strip() or None
 
     updates = []
+    params = {"$id": ex_id}
+    decl = ["DECLARE $id AS Utf8;"]
     if 'name' in data:
-        updates.append(f'name = "{_esc(str(data["name"]))}"')
+        updates.append('name = $name')
+        params["$name"] = str(data.get("name", ""))
+        decl.append("DECLARE $name AS Utf8;")
     if 'muscleGroup' in data:
-        updates.append(f'muscle_group = "{_esc(str(data["muscleGroup"]))}"')
+        updates.append('muscle_group = $muscle_group')
+        params["$muscle_group"] = str(data.get("muscleGroup", ""))
+        decl.append("DECLARE $muscle_group AS Utf8;")
     if 'description' in data:
-        updates.append(f'description = "{_esc(str(data.get("description", "")))}"')
+        updates.append('description = $description')
+        params["$description"] = str(data.get("description", ""))
+        decl.append("DECLARE $description AS Utf8;")
     if 'imageUrl' in data:
-        updates.append(f'image_url = "{_esc(str(data.get("imageUrl", "")))}"')
+        updates.append('image_url = $image_url')
+        params["$image_url"] = str(data.get("imageUrl", ""))
+        decl.append("DECLARE $image_url AS Utf8;")
     if 'secondaryMuscles' in data:
-        updates.append(f'secondary_muscles = "{_esc(str(data.get("secondaryMuscles", "")))}"')
+        updates.append('secondary_muscles = $secondary_muscles')
+        params["$secondary_muscles"] = str(data.get("secondaryMuscles", ""))
+        decl.append("DECLARE $secondary_muscles AS Utf8;")
     if 'weightMultiplier' in data:
         mult_val = _to_float(data.get('weightMultiplier'), 1.0)
-        updates.append(f'multiplier = {mult_val}')
+        updates.append('multiplier = $multiplier')
+        params["$multiplier"] = mult_val
+        decl.append("DECLARE $multiplier AS Double;")
     if 'bodyWeightFactor' in data:
         bwf = _to_float(data.get('bodyWeightFactor'), 1.0)
-        updates.append(f'body_weight_factor = {bwf}')
+        updates.append('body_weight_factor = $body_weight_factor')
+        params["$body_weight_factor"] = bwf
+        decl.append("DECLARE $body_weight_factor AS Double;")
     if updates:
-        pool.execute_with_retries(f"""
-            UPDATE exercises SET {", ".join(updates)} WHERE id = "{_esc(ex_id)}";
-        """)
+        pool.execute_with_retries("\n".join(decl) + f"\nUPDATE exercises SET {', '.join(updates)} WHERE id = $id;", params)
 
     # exercise_muscles: primary + secondaryMuscles
     if primary_muscle:
@@ -266,13 +281,6 @@ def update_exercise(ex_id: str, data: Dict) -> bool:
             delete_secondary_muscles(ex_id, primary_muscle or '')
 
     return True
-
-
-def _esc(s: str) -> str:
-    """Экранирование для YQL строки."""
-    if s is None:
-        return ""
-    return str(s).replace('\\', '\\\\').replace('"', '\\"')
 
 
 def calculate_e1rm(weight: float, reps: int) -> tuple:
@@ -299,18 +307,17 @@ def calculate_e1rm(weight: float, reps: int) -> tuple:
 
 # --- Log (подходы) ---
 
-def _get_max_weight_in_session(pool, tbl: str, ex_id: str, session_id: str, set_group: str) -> float:
+def _get_max_weight_in_session(pool, ex_id: str, session_id: str, set_group: str) -> float:
     """Максимальный вес по упражнению в текущей сессии (для авто-разметки warmup)."""
     try:
         sid = session_id or set_group
         if not sid:
             return 0.0
-        date_col = _log_date_col()
-        if tbl == 'workout_logs':
-            q = f'SELECT MAX(total_weight) as m FROM {tbl} WHERE exercise_id = "{_esc(ex_id)}" AND (set_group_id = "{_esc(sid)}" OR session_id = "{_esc(sid)}");'
-        else:
-            q = f'SELECT MAX(total_weight) as m FROM {tbl} WHERE exercise_id = "{_esc(ex_id)}" AND (set_group_id = "{_esc(sid)}" OR session_id = "{_esc(sid)}");'
-        r = pool.execute_with_retries(q)
+        r = pool.execute_with_retries("""
+            DECLARE $ex_id AS Utf8;
+            DECLARE $sid AS Utf8;
+            SELECT MAX(total_weight) as m FROM log WHERE exercise_id = $ex_id AND (set_group_id = $sid OR session_id = $sid);
+        """, {"$ex_id": ex_id, "$sid": sid})
         if r and r[0].rows and hasattr(r[0].rows[0], 'm') and r[0].rows[0].m is not None:
             return _to_float(r[0].rows[0].m)
     except Exception as e:
@@ -319,13 +326,13 @@ def _get_max_weight_in_session(pool, tbl: str, ex_id: str, session_id: str, set_
 
 
 def save_set(data: Dict) -> Dict:
-    """Сохраняет подход. Возвращает {status, row_number} где row_number = log_id."""
+    """Сохраняет подход. Возвращает {status, row_number} где row_number = log_id.
+    Поддерживает Frontend-driven ID: если передан id или row_number, используется он (для offline-first)."""
     pool = get_pool()
     if not pool:
         return {"status": "error", "error": "YDB not configured"}
-    log_id = str(uuid.uuid4())
+    log_id = str(data.get('id') or data.get('row_number') or uuid.uuid4())
     now = datetime.now(MOSCOW_TZ).strftime('%Y.%m.%d')
-    now_dt = datetime.now(MOSCOW_TZ).strftime('%Y.%m.%d, %H:%M')
     ex_id = str(data.get('exercise_id', ''))
     ex_name = str(data.get('exercise_name', ''))
     input_wt = _to_float(data.get('input_weight'))
@@ -339,8 +346,7 @@ def save_set(data: Dict) -> Dict:
     set_type = str(data.get('set_type', 'working') or 'working')
     set_type_explicit = 'set_type' in data and data.get('set_type') is not None and str(data.get('set_type')).strip() != ''
     if not set_type_explicit and total_wt > 0 and reps > 0:
-        tbl = _log_table()
-        max_wt = _get_max_weight_in_session(pool, tbl, ex_id, session_id_val, set_group)
+        max_wt = _get_max_weight_in_session(pool, ex_id, session_id_val, set_group)
         if max_wt > 0 and total_wt < 0.6 * max_wt:
             set_type = 'warmup'
     rpe_val = _to_float(data.get('rpe')) if data.get('rpe') is not None and str(data.get('rpe')).strip() != '' else None
@@ -348,20 +354,34 @@ def save_set(data: Dict) -> Dict:
     _, is_low = calculate_e1rm(total_wt, reps)
     if data.get('is_low_confidence') is not None:
         is_low = bool(data.get('is_low_confidence'))
-    rpe_sql = f', {rpe_val}' if rpe_val is not None else ', NULL'
-    rir_sql = f', {rir_val}' if rir_val is not None else ', NULL'
-    tbl = _log_table()
+    params = {
+        "$id": log_id, "$date_val": now, "$ex_id": ex_id, "$ex_name": ex_name,
+        "$input_wt": input_wt, "$total_wt": total_wt, "$reps": reps, "$rest": rest,
+        "$set_group": set_group, "$session_id": session_id_val, "$note": note,
+        "$ord_val": ord_val, "$set_type": set_type or "working",
+        "$rpe": rpe_val, "$rir": rir_val, "$is_low": is_low,
+    }
     try:
-        if tbl == 'workout_logs':
-            pool.execute_with_retries(f"""
-                UPSERT INTO {tbl} (id, date_time, exercise_id, input_weight, total_weight, reps, rest, set_group_id, session_id, note, sort_order, set_type, rpe, rir, is_low_confidence)
-                VALUES ("{log_id}", "{now_dt}", "{_esc(ex_id)}", {input_wt}, {total_wt}, {reps}, {rest}, "{_esc(set_group)}", "{_esc(session_id_val)}", "{_esc(note)}", {ord_val}, "{_esc(set_type)}"{rpe_sql}{rir_sql}, {str(is_low).lower()});
-            """)
-        else:
-            pool.execute_with_retries(f"""
-                UPSERT INTO {tbl} (id, date, exercise_id, exercise_name, input_weight, total_weight, reps, rest, set_group_id, session_id, note, ord, set_type, rpe, rir, is_low_confidence)
-                VALUES ("{log_id}", "{now}", "{_esc(ex_id)}", "{_esc(ex_name)}", {input_wt}, {total_wt}, {reps}, {rest}, "{_esc(set_group)}", "{_esc(session_id_val)}", "{_esc(note)}", {ord_val}, "{_esc(set_type)}"{rpe_sql}{rir_sql}, {str(is_low).lower()});
-            """)
+        pool.execute_with_retries("""
+            DECLARE $id AS Utf8;
+            DECLARE $date_val AS Utf8;
+            DECLARE $ex_id AS Utf8;
+            DECLARE $ex_name AS Utf8;
+            DECLARE $input_wt AS Double;
+            DECLARE $total_wt AS Double;
+            DECLARE $reps AS Uint32;
+            DECLARE $rest AS Double;
+            DECLARE $set_group AS Utf8;
+            DECLARE $session_id AS Utf8;
+            DECLARE $note AS Utf8;
+            DECLARE $ord_val AS Uint32;
+            DECLARE $set_type AS Utf8;
+            DECLARE $rpe AS Double?;
+            DECLARE $rir AS Uint32?;
+            DECLARE $is_low AS Bool;
+            UPSERT INTO log (id, date, exercise_id, exercise_name, input_weight, total_weight, reps, rest, set_group_id, session_id, note, ord, set_type, rpe, rir, is_low_confidence)
+            VALUES ($id, $date_val, $ex_id, $ex_name, $input_wt, $total_wt, $reps, $rest, $set_group, $session_id, $note, $ord_val, $set_type, $rpe, $rir, $is_low);
+        """, params)
         return {"status": "success", "row_number": log_id}
     except Exception as e:
         logger.error(f"save_set: {e}", exc_info=True)
@@ -379,12 +399,15 @@ def update_set(data: Dict) -> bool:
     total_wt = _to_float(data.get('weight'))
     reps = _to_int(data.get('reps'))
     rest = _to_float(data.get('rest'))
-    tbl = _log_table()
     try:
-        pool.execute_with_retries(f"""
-            UPDATE {tbl} SET total_weight = {total_wt}, reps = {reps}, rest = {rest}
-            WHERE id = "{_esc(row_id)}";
-        """)
+        pool.execute_with_retries("""
+            DECLARE $row_id AS Utf8;
+            DECLARE $total_wt AS Double;
+            DECLARE $reps AS Uint32;
+            DECLARE $rest AS Double;
+            UPDATE log SET total_weight = $total_wt, reps = $reps, rest = $rest
+            WHERE id = $row_id;
+        """, {"$row_id": row_id, "$total_wt": total_wt, "$reps": reps, "$rest": rest})
         return True
     except Exception as e:
         logger.error(f"update_set: {e}", exc_info=True)
@@ -398,23 +421,15 @@ def delete_set(row_id: str) -> bool:
         return False
     if not row_id:
         return False
-    tbl = _log_table()
     try:
-        pool.execute_with_retries(f'DELETE FROM {tbl} WHERE id = "{_esc(row_id)}";')
+        pool.execute_with_retries("""
+            DECLARE $row_id AS Utf8;
+            DELETE FROM log WHERE id = $row_id;
+        """, {"$row_id": row_id})
         return True
     except Exception as e:
         logger.error(f"delete_set: {e}", exc_info=True)
         return False
-
-
-def _log_table() -> str:
-    """Таблица логов: log или workout_logs (из env)."""
-    return os.environ.get('YDB_LOG_TABLE', 'log')
-
-
-def _log_date_col() -> str:
-    """Колонка даты: date (log) или date_time (workout_logs)."""
-    return 'date_time' if _log_table() == 'workout_logs' else 'date'
 
 
 def _parse_date_val(val) -> str:
@@ -426,39 +441,43 @@ def _parse_date_val(val) -> str:
 
 
 def export_logs_csv() -> str:
-    """Экспорт всех записей из таблицы логов в CSV. Сортировка по дате по убыванию."""
+    """Экспорт всех записей из таблицы log в CSV. Сортировка по дате по убыванию. BOM для корректной кириллицы в Excel."""
     pool = get_pool()
     if not pool:
         return ''
-    tbl = _log_table()
-    date_col = _log_date_col()
-    columns = ['id', 'date', 'exercise_name', 'input_weight', 'total_weight', 'reps', 'rest', 'set_type', 'rpe', 'rir', 'is_low_confidence', 'session_id']
+    columns = ['id', 'date', 'order', 'exercise_name', 'input_weight', 'total_weight', 'reps', 'rest', 'set_type', 'rpe', 'rir', 'is_low_confidence', 'session_id']
     try:
-        result = pool.execute_with_retries(f"""
-            SELECT id, {date_col}, exercise_name, input_weight, total_weight, reps, rest, set_type, rpe, rir, is_low_confidence, session_id
-            FROM {tbl}
-            ORDER BY {date_col} DESC;
+        result = pool.execute_with_retries("""
+            SELECT * FROM log ORDER BY date DESC;
         """)
         rows = result[0].rows if result and result[0].rows else []
+        ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
         out = io.StringIO(newline='')
+        out.write('\ufeff')
         writer = csv.writer(out, delimiter=',', quoting=csv.QUOTE_MINIMAL)
         writer.writerow(columns)
         for row in rows:
-            raw_date = _row_val(row, date_col, 'date', 'date_time', 'Date', 'DateTime')
+            raw_date = getattr(row, 'date', '')
             date_val = _parse_date_val(raw_date) if raw_date else str(raw_date or '')
+            ex_id = getattr(row, 'exercise_id', '')
+            ex_info = ex_map.get(ex_id, {})
+            ex_name = ex_info.get('name') or getattr(row, 'exercise_name', '') or 'Unknown'
+            rpe_val = getattr(row, 'rpe', None)
+            rir_val = getattr(row, 'rir', None)
             writer.writerow([
-                str(_row_val(row, 'id', 'ID') or ''),
+                str(getattr(row, 'id', '') or ''),
                 date_val,
-                str(_row_val(row, 'exercise_name', 'exerciseName', 'Exercise_Name') or ''),
-                _to_float(_row_val(row, 'input_weight', 'inputWeight', 'Input_Weight')),
-                _to_float(_row_val(row, 'total_weight', 'totalWeight', 'Total_Weight')),
-                _to_int(_row_val(row, 'reps', 'Reps')),
-                _to_float(_row_val(row, 'rest', 'Rest')),
-                str(_row_val(row, 'set_type', 'setType', 'Set_Type') or ''),
-                _to_float(_row_val(row, 'rpe', 'RPE')) if _row_val(row, 'rpe', 'RPE') not in (None, '') else '',
-                _to_int(_row_val(row, 'rir', 'RIR')) if _row_val(row, 'rir', 'RIR') not in (None, '') else '',
-                bool(getattr(row, 'is_low_confidence', False)) if hasattr(row, 'is_low_confidence') else False,
-                str(_row_val(row, 'session_id', 'sessionId', 'Session_ID') or ''),
+                _to_int(getattr(row, 'ord', 0)),
+                ex_name,
+                _to_float(getattr(row, 'input_weight', None)),
+                _to_float(getattr(row, 'total_weight', None)),
+                _to_int(getattr(row, 'reps', 0)),
+                _to_float(getattr(row, 'rest', None)),
+                str(getattr(row, 'set_type', '') or ''),
+                _to_float(rpe_val) if rpe_val is not None and str(rpe_val).strip() != '' else '',
+                _to_int(rir_val) if rir_val is not None and str(rir_val).strip() != '' else '',
+                bool(getattr(row, 'is_low_confidence', False)),
+                str(getattr(row, 'session_id', '') or ''),
             ])
         return out.getvalue()
     except Exception as e:
@@ -478,10 +497,14 @@ def start_session(body_weight: float = 0) -> Dict:
     now_ts = int(now.timestamp() * 1_000_000)
     date_str = now.strftime('%Y.%m.%d')
     try:
-        pool.execute_with_retries(f"""
+        pool.execute_with_retries("""
+            DECLARE $id AS Utf8;
+            DECLARE $date_str AS Utf8;
+            DECLARE $now_ts AS Int64;
+            DECLARE $body_weight AS Double;
             UPSERT INTO sessions (id, date, start_ts, end_ts, duration_sec, srpe, body_weight)
-            VALUES ("{session_id}", "{date_str}", DateTime::FromMicroseconds({now_ts}), DateTime::FromMicroseconds({now_ts}), 0, 0, {_to_float(body_weight)});
-        """)
+            VALUES ($id, $date_str, DateTime::FromMicroseconds($now_ts), DateTime::FromMicroseconds($now_ts), 0, 0, $body_weight);
+        """, {"$id": session_id, "$date_str": date_str, "$now_ts": now_ts, "$body_weight": _to_float(body_weight)})
         return {"session_id": session_id, "date": date_str}
     except Exception as e:
         logger.error(f"start_session: {e}", exc_info=True)
@@ -496,9 +519,10 @@ def finish_session(session_id: str, srpe: float = 0, body_weight: float = 0) -> 
     try:
         now = datetime.now(MOSCOW_TZ)
         now_ts = int(now.timestamp() * 1_000_000)
-        result = pool.execute_with_retries(f"""
-            SELECT start_ts FROM sessions WHERE id = "{_esc(session_id)}";
-        """)
+        result = pool.execute_with_retries("""
+            DECLARE $session_id AS Utf8;
+            SELECT start_ts FROM sessions WHERE id = $session_id;
+        """, {"$session_id": session_id})
         if not result or not result[0].rows:
             return False
         start_ts = getattr(result[0].rows[0], 'start_ts', None)
@@ -506,10 +530,15 @@ def finish_session(session_id: str, srpe: float = 0, body_weight: float = 0) -> 
             return False
         start_sec = int(start_ts.timestamp()) if hasattr(start_ts, 'timestamp') else int(start_ts) // 1_000_000
         duration_sec = int(now.timestamp()) - start_sec
-        pool.execute_with_retries(f"""
-            UPDATE sessions SET end_ts = DateTime::FromMicroseconds({now_ts}), duration_sec = {duration_sec}, srpe = {_to_float(srpe)}, body_weight = {_to_float(body_weight)}
-            WHERE id = "{_esc(session_id)}";
-        """)
+        pool.execute_with_retries("""
+            DECLARE $session_id AS Utf8;
+            DECLARE $now_ts AS Int64;
+            DECLARE $duration_sec AS Int32;
+            DECLARE $srpe AS Double;
+            DECLARE $body_weight AS Double;
+            UPDATE sessions SET end_ts = DateTime::FromMicroseconds($now_ts), duration_sec = $duration_sec, srpe = $srpe, body_weight = $body_weight
+            WHERE id = $session_id;
+        """, {"$session_id": session_id, "$now_ts": now_ts, "$duration_sec": duration_sec, "$srpe": _to_float(srpe), "$body_weight": _to_float(body_weight)})
         return True
     except Exception as e:
         logger.error(f"finish_session: {e}", exc_info=True)
@@ -546,9 +575,10 @@ def get_exercise_muscles(exercise_id: str) -> List[Dict]:
     if not pool:
         return []
     try:
-        result = pool.execute_with_retries(f"""
-            SELECT muscle_group, weight_factor FROM exercise_muscles WHERE exercise_id = "{_esc(exercise_id)}";
-        """)
+        result = pool.execute_with_retries("""
+            DECLARE $exercise_id AS Utf8;
+            SELECT muscle_group, weight_factor FROM exercise_muscles WHERE exercise_id = $exercise_id;
+        """, {"$exercise_id": exercise_id})
         return [{"muscle_group": str(r.muscle_group), "weight_factor": _to_float(r.weight_factor, 1.0)}
                 for r in result[0].rows]
     except Exception as e:
@@ -562,10 +592,13 @@ def upsert_exercise_muscle(exercise_id: str, muscle_group: str, weight_factor: f
     if not pool:
         return False
     try:
-        pool.execute_with_retries(f"""
+        pool.execute_with_retries("""
+            DECLARE $exercise_id AS Utf8;
+            DECLARE $muscle_group AS Utf8;
+            DECLARE $weight_factor AS Double;
             UPSERT INTO exercise_muscles (exercise_id, muscle_group, weight_factor)
-            VALUES ("{_esc(exercise_id)}", "{_esc(muscle_group)}", {_to_float(weight_factor)});
-        """)
+            VALUES ($exercise_id, $muscle_group, $weight_factor);
+        """, {"$exercise_id": exercise_id, "$muscle_group": muscle_group, "$weight_factor": _to_float(weight_factor)})
         return True
     except Exception as e:
         logger.error(f"upsert_exercise_muscle: {e}", exc_info=True)
@@ -578,7 +611,10 @@ def _get_exercise_muscle_group(ex_id: str) -> Optional[str]:
     if not pool:
         return None
     try:
-        result = pool.execute_with_retries(f'SELECT muscle_group FROM exercises WHERE id = "{_esc(ex_id)}";')
+        result = pool.execute_with_retries("""
+            DECLARE $ex_id AS Utf8;
+            SELECT muscle_group FROM exercises WHERE id = $ex_id;
+        """, {"$ex_id": ex_id})
         if result and result[0].rows:
             return str(result[0].rows[0].muscle_group or '').strip() or None
     except Exception as e:
@@ -594,10 +630,12 @@ def delete_secondary_muscles(exercise_id: str, primary_muscle: str) -> bool:
     if not pool:
         return False
     try:
-        pool.execute_with_retries(f"""
+        pool.execute_with_retries("""
+            DECLARE $exercise_id AS Utf8;
+            DECLARE $primary_muscle AS Utf8;
             DELETE FROM exercise_muscles
-            WHERE exercise_id = "{_esc(exercise_id)}" AND muscle_group != "{_esc(primary_muscle)}";
-        """)
+            WHERE exercise_id = $exercise_id AND muscle_group != $primary_muscle;
+        """, {"$exercise_id": exercise_id, "$primary_muscle": primary_muscle})
         return True
     except Exception as e:
         logger.error(f"delete_secondary_muscles: {e}", exc_info=True)
@@ -609,22 +647,26 @@ def get_volume_load(days: int = 7, exercise_id: str = None) -> float:
     pool = get_pool()
     if not pool:
         return 0.0
-    tbl = _log_table()
-    date_col = _log_date_col()
     cutoff = (datetime.now(MOSCOW_TZ) - timedelta(days=days)).strftime('%Y.%m.%d')
     try:
-        where = f'{date_col} >= "{cutoff}"'
         if exercise_id:
-            where = f'{where} AND exercise_id = "{_esc(exercise_id)}"'
-        q = f'SELECT {date_col}, total_weight, reps, set_type FROM {tbl} WHERE {where} LIMIT 3000;'
-        r = pool.execute_with_retries(q)
+            r = pool.execute_with_retries("""
+                DECLARE $cutoff AS Utf8;
+                DECLARE $exercise_id AS Utf8;
+                SELECT date, total_weight, reps, set_type FROM log WHERE date >= $cutoff AND exercise_id = $exercise_id LIMIT 3000;
+            """, {"$cutoff": cutoff, "$exercise_id": exercise_id})
+        else:
+            r = pool.execute_with_retries("""
+                DECLARE $cutoff AS Utf8;
+                SELECT date, total_weight, reps, set_type FROM log WHERE date >= $cutoff LIMIT 3000;
+            """, {"$cutoff": cutoff})
         total = 0.0
         for row in (r[0].rows if r and r[0].rows else []):
-            st = str(_row_val(row, 'set_type', 'setType') or '').lower()
+            st = str(getattr(row, 'set_type', '') or '').lower()
             if st and st != 'working':
                 continue
-            w = _to_float(_row_val(row, 'total_weight', 'totalWeight'))
-            rp = _to_int(_row_val(row, 'reps', 'Reps'))
+            w = _to_float(getattr(row, 'total_weight', None))
+            rp = _to_int(getattr(row, 'reps', 0))
             total += w * rp
         return round(total, 1)
     except Exception as e:
@@ -638,23 +680,23 @@ def get_muscle_volume(days: int = 7) -> Dict[str, float]:
     pool = get_pool()
     if not pool:
         return {}
-    tbl = _log_table()
-    date_col = _log_date_col()
     cutoff = (datetime.now(MOSCOW_TZ) - timedelta(days=days)).strftime('%Y.%m.%d')
     ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
     all_muscles = _load_all_exercise_muscles()
     muscle_vol = {}
     muscle_sets = {}
     try:
-        q = f'SELECT {date_col}, exercise_id, total_weight, reps, set_type FROM {tbl} WHERE {date_col} >= "{cutoff}" LIMIT 2000;'
-        r = pool.execute_with_retries(q)
+        r = pool.execute_with_retries("""
+            DECLARE $cutoff AS Utf8;
+            SELECT date, exercise_id, total_weight, reps, set_type FROM log WHERE date >= $cutoff LIMIT 2000;
+        """, {"$cutoff": cutoff})
         for row in (r[0].rows if r and r[0].rows else []):
-            st = str(_row_val(row, 'set_type', 'setType') or '').lower()
+            st = str(getattr(row, 'set_type', '') or '').lower()
             if st and st != 'working':
                 continue
-            ex_id = _row_val(row, 'exercise_id', 'exerciseId')
-            w = _to_float(_row_val(row, 'total_weight', 'totalWeight'))
-            rp = _to_int(_row_val(row, 'reps', 'Reps'))
+            ex_id = getattr(row, 'exercise_id', '')
+            w = _to_float(getattr(row, 'total_weight', None))
+            rp = _to_int(getattr(row, 'reps', 0))
             tonnage = w * rp
 
             muscles = all_muscles.get(ex_id, [])
@@ -697,27 +739,24 @@ def get_exercise_history(exercise_id: str, limit: int = 50) -> Dict:
     pool = get_pool()
     if not pool:
         return {"history": [], "note": ""}
-    tbl = _log_table()
-    date_col = _log_date_col()
     try:
-        result_sets = pool.execute_with_retries(f"""
-            SELECT * FROM {tbl}
-            WHERE exercise_id = "{_esc(exercise_id)}"
-            ORDER BY {date_col} DESC;
-        """)
+        result_sets = pool.execute_with_retries("""
+            DECLARE $exercise_id AS Utf8;
+            SELECT * FROM log WHERE exercise_id = $exercise_id ORDER BY date DESC;
+        """, {"$exercise_id": exercise_id})
         items = []
         for row in result_sets[0].rows:
-            raw_date = _row_val(row, 'date', 'Date', 'date_time', 'DateTime')
-            set_type_val = _row_val(row, 'set_type', 'setType', 'Set_Type') or None
-            rpe_val = _row_val(row, 'rpe', 'RPE')
-            rir_val = _row_val(row, 'rir', 'RIR')
+            raw_date = getattr(row, 'date', '')
+            set_type_val = getattr(row, 'set_type', None) or None
+            rpe_val = getattr(row, 'rpe', None)
+            rir_val = getattr(row, 'rir', None)
             items.append({
                 'date': _parse_date_val(raw_date),
-                'weight': _to_float(_row_val(row, 'total_weight', 'totalWeight', 'Total_Weight', 'weight', 'Weight')),
-                'reps': _to_int(_row_val(row, 'reps', 'Reps')),
-                'rest': _to_float(_row_val(row, 'rest', 'Rest')),
-                'order': _to_int(_row_val(row, 'ord', 'order', 'Order', 'sort_order', 'Sort_Order')),
-                'setGroupId': _row_val(row, 'set_group_id', 'setGroupId', 'Set_Group_ID') or None,
+                'weight': _to_float(getattr(row, 'total_weight', None)),
+                'reps': _to_int(getattr(row, 'reps', 0)),
+                'rest': _to_float(getattr(row, 'rest', None)),
+                'order': _to_int(getattr(row, 'ord', 0)),
+                'setGroupId': getattr(row, 'set_group_id', None) or None,
                 'set_type': str(set_type_val) if set_type_val else None,
                 'rpe': _to_float(rpe_val) if rpe_val is not None and str(rpe_val).strip() != '' else None,
                 'rir': _to_int(rir_val) if rir_val is not None and str(rir_val).strip() != '' else None,
@@ -742,37 +781,35 @@ def get_global_history(limit_rows: int = 1500) -> List[Dict]:
     if not pool:
         return []
     try:
-        tbl = _log_table()
-        date_col = _log_date_col()
-        result_sets = pool.execute_with_retries(f"""
-            SELECT id, {date_col}, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir FROM {tbl}
-            ORDER BY {date_col} DESC
-            LIMIT {limit_rows};
-        """)
+        result_sets = pool.execute_with_retries("""
+            DECLARE $limit_rows AS Uint64;
+            SELECT id, date, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir FROM log
+            ORDER BY date DESC LIMIT $limit_rows;
+        """, {"$limit_rows": limit_rows})
         ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
         days = {}
         for row in result_sets[0].rows:
-            raw_date = _row_val(row, 'date', 'Date', 'date_time', 'DateTime')
+            raw_date = getattr(row, 'date', '')
             date_val = _parse_date_val(raw_date)
-            ex_id = _row_val(row, 'exercise_id', 'exerciseId', 'Exercise_ID')
+            ex_id = getattr(row, 'exercise_id', '')
             ex_info = ex_map.get(ex_id, {})
-            ex_name = ex_info.get('name') or _row_val(row, 'exercise_name', 'exerciseName', 'Exercise_Name') or 'Unknown'
+            ex_name = ex_info.get('name') or getattr(row, 'exercise_name', '') or 'Unknown'
             muscle = ex_info.get('muscleGroup', 'Other')
             if date_val not in days:
                 days[date_val] = {"date": date_val, "muscleGroups": set(), "exercises": []}
             days[date_val]["muscleGroups"].add(muscle)
-            set_type_val = _row_val(row, 'set_type', 'setType', 'Set_Type') or None
-            rpe_val = _row_val(row, 'rpe', 'RPE')
-            rir_val = _row_val(row, 'rir', 'RIR')
+            set_type_val = getattr(row, 'set_type', None) or None
+            rpe_val = getattr(row, 'rpe', None)
+            rir_val = getattr(row, 'rir', None)
             days[date_val]["exercises"].append({
-                "id": _row_val(row, 'id', 'ID'),
+                "id": getattr(row, 'id', ''),
                 "exerciseId": ex_id,
                 "exerciseName": ex_name,
-                "weight": _to_float(_row_val(row, 'total_weight', 'totalWeight', 'weight', 'Weight')),
-                "reps": _to_int(_row_val(row, 'reps', 'Reps')),
-                "rest": _to_float(_row_val(row, 'rest', 'Rest')),
-                "order": _to_int(_row_val(row, 'ord', 'order', 'Order', 'sort_order', 'Sort_Order')),
-                "setGroupId": _row_val(row, 'set_group_id', 'setGroupId', 'Set_Group_ID') or "",
+                "weight": _to_float(getattr(row, 'total_weight', None)),
+                "reps": _to_int(getattr(row, 'reps', 0)),
+                "rest": _to_float(getattr(row, 'rest', None)),
+                "order": _to_int(getattr(row, 'ord', 0)),
+                "setGroupId": getattr(row, 'set_group_id', '') or "",
                 "set_type": str(set_type_val) if set_type_val else None,
                 "rpe": _to_float(rpe_val) if rpe_val is not None and str(rpe_val).strip() != '' else None,
                 "rir": _to_int(rir_val) if rir_val is not None and str(rir_val).strip() != '' else None,

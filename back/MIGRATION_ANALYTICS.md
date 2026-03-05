@@ -40,4 +40,12 @@ ALTER TABLE workout_logs ADD COLUMN rpe Double;
 ALTER TABLE workout_logs ADD COLUMN rir Uint32;
 ```
 
-После миграции перезадеплойте Cloud Function.
+## Объединение log и workout_logs (единая схема)
+
+Скрипт `run_migration_unified.py` объединяет `log` и `workout_logs` в единую таблицу `log` со схемой snake_case. После миграции поддержка `workout_logs` удалена.
+
+```bash
+python run_migration_unified.py
+```
+
+Перед запуском выполните `run_migration_analytics.py` (добавление колонок). После миграции удалите `YDB_LOG_TABLE` из переменных окружения и перезадеплойте Cloud Function.

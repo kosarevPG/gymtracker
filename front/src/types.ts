@@ -30,7 +30,8 @@ export interface WorkoutSet {
   order?: number;
   setGroupId?: string;
   isEditing?: boolean;
-  rowNumber?: number;
+  /** ID записи в БД (для update/delete). Frontend-driven: равен id сета при offline-first. */
+  rowNumber?: number | string;
   pendingId?: string;
   effectiveWeight?: number;
   setType?: SetType;

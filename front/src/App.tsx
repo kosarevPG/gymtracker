@@ -602,7 +602,7 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
     weight: string;
     reps: string;
     rest: string;
-    rowNumber?: number;
+    rowNumber?: number | string;
     equipmentType?: string;
     weightType?: string;
     baseWeight?: number;
@@ -628,6 +628,7 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
     timer.resetAndStart();
 
     const result = await api.saveSet({
+        id: setId,
         exercise_id: exId,
         exercise_name: exercise?.name,
         weight: effectiveWeight,
@@ -643,23 +644,21 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
         is_low_confidence: set.isLowConfidence ?? false,
         order
     });
-    
+    const rowNum = result?.row_number ?? setId;
     if (result?.row_number) {
-        // Успешно сохранено на сервере
         setSessionData(prev => ({
             ...prev,
             [exId]: {
                 ...prev[exId],
-                sets: prev[exId].sets.map(s => s.id === setId ? { ...s, rowNumber: result.row_number } : s)
+                sets: prev[exId].sets.map(s => s.id === setId ? { ...s, rowNumber: rowNum } : s)
             }
         }));
     } else if (result?.pending_id) {
-        // Сохранено в офлайн-очередь
         setSessionData(prev => ({
             ...prev,
             [exId]: {
                 ...prev[exId],
-                sets: prev[exId].sets.map(s => s.id === setId ? { ...s, pendingId: result.pending_id } : s)
+                sets: prev[exId].sets.map(s => s.id === setId ? { ...s, pendingId: result.pending_id, rowNumber: rowNum } : s)
             }
         }));
     }

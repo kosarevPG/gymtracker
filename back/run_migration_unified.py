@@ -96,7 +96,11 @@ def main():
                 driver.stop()
                 sys.exit(1)
 
-    # 2. Создать log_new
+    # 2. Создать log_new (DROP если перезапуск после сбоя)
+    try:
+        pool.execute_with_retries("DROP TABLE IF EXISTS log_new;")
+    except Exception:
+        pass
     pool.execute_with_retries("""
         CREATE TABLE log_new (
             id Utf8,
@@ -143,10 +147,13 @@ def main():
                     Unicode::Substring(COALESCE(date_time, ""), 0, 10),
                     exercise_id,
                     COALESCE(exercise_name, ""),
-                    input_weight, total_weight, reps, rest, set_group_id, session_id, note,
-                    COALESCE(sort_order, 0),
+                    input_weight, total_weight,
+                    CAST(COALESCE(reps, 0) AS Uint32),
+                    rest, set_group_id, session_id, note,
+                    CAST(COALESCE(sort_order, 0) AS Uint32),
                     COALESCE(set_type, "working"),
-                    rpe, rir,
+                    rpe,
+                    CAST(COALESCE(rir, 0) AS Uint32),
                     COALESCE(is_low_confidence, false)
                 FROM workout_logs;
             """)

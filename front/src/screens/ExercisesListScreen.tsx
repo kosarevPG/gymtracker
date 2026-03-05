@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Input, Modal } from '../ui';
+import { Input, Modal, StickyBottomBar, Button } from '../ui';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { ExerciseCard } from '../components/ExerciseCard';
 import type { Exercise } from '../types';
@@ -44,24 +44,23 @@ export const ExercisesListScreen = ({
       <ScreenHeader
         title={title}
         onBack={onBack}
-        rightAction={<button onClick={onAddExercise} className="p-2 text-blue-500 hover:bg-zinc-800 rounded-full active:scale-90"><Plus className="w-7 h-7" /></button>}
       >
         {searchQuery ? (
           <div className="relative flex-1">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
             <Input
               ref={searchInputRef}
               placeholder="Найти..."
               value={searchQuery}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearch(e.target.value)}
-              className="pl-8 bg-zinc-900 w-full h-9 text-sm"
+              leftIcon={<Search className="w-4 h-4" />}
+              className="bg-zinc-900 w-full text-sm"
             />
           </div>
         ) : (
           <h1 className="text-xl font-bold truncate">{title}</h1>
         )}
       </ScreenHeader>
-      <div className="p-4 space-y-2 pb-24">
+      <div className="p-4 space-y-2 pb-28">
         {exercises.map((ex) => (
           <ExerciseCard key={ex.id} ex={ex} onSelectExercise={onSelectExercise} onInfoClick={(e) => setInfoModalExId(e.id)} />
         ))}
@@ -88,6 +87,9 @@ export const ExercisesListScreen = ({
           </div>
         )}
       </Modal>
+      <StickyBottomBar>
+        <Button variant="primary" onClick={onAddExercise} className="w-full" icon={Plus}>Добавить упражнение</Button>
+      </StickyBottomBar>
     </motion.div>
   );
 };

@@ -21,7 +21,7 @@ const variants: Record<ButtonVariant, string> = {
 };
 
 export const Button = ({ children, variant = 'primary', className = '', onClick, icon: Icon, disabled }: ButtonProps) => (
-  <button onClick={onClick} disabled={disabled} className={`flex items-center justify-center font-medium rounded-xl transition-all active:scale-95 disabled:opacity-50 ${variants[variant]} ${className}`}>
+  <button onClick={onClick} disabled={disabled} className={`flex items-center justify-center min-h-[48px] font-medium rounded-xl transition-all active:scale-95 disabled:opacity-50 ${variants[variant]} ${className}`}>
     {Icon && <Icon className="w-5 h-5 mr-2" />}
     {children}
   </button>

@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Pencil, Check, Trash2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { SetDisplayRow } from './SetDisplayRow';
 
 interface HistorySet {
@@ -30,8 +31,15 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
   const [rest, setRest] = useState(String(set.rest));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
 
   const canEdit = !!set.id;
+
+  useEffect(() => {
+    if (!justSaved) return;
+    const t = setTimeout(() => setJustSaved(false), 1000);
+    return () => clearTimeout(t);
+  }, [justSaved]);
 
   const handleSave = async () => {
     if (!saving) {
@@ -41,7 +49,9 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
         const r = parseInt(reps, 10) || 0;
         const rs = parseFloat(rest) || 0;
         await onSave({ weight: w, reps: r, rest: rs });
-        setIsEditing(false);
+        setJustSaved(true);
+        if (navigator.vibrate) navigator.vibrate(50);
+        setTimeout(() => setIsEditing(false), 1000);
       } catch {
         // ignore
       } finally {
@@ -64,7 +74,7 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
           value={weight}
           onChange={(e) => setWeight(e.target.value)}
           onBlur={() => { if (weight && repsRef.current) repsRef.current.focus(); }}
-          className="w-16 h-10 bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm"
+          className="w-16 min-h-[48px] bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm tabular-nums"
           placeholder="кг"
         />
         <span className="text-zinc-500">×</span>
@@ -75,7 +85,7 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
           pattern="[0-9]*"
           value={reps}
           onChange={(e) => setReps(e.target.value)}
-          className="w-14 h-10 bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm"
+          className="w-14 min-h-[48px] bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm tabular-nums"
           placeholder="повт"
         />
         <span className="text-zinc-500 text-sm">отдых</span>
@@ -85,16 +95,17 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
           pattern="[0-9.]*"
           value={rest}
           onChange={(e) => setRest(e.target.value)}
-          className="w-12 h-10 bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm"
+          className="w-12 min-h-[48px] bg-zinc-800 text-zinc-50 rounded-lg px-2 text-center text-sm tabular-nums"
           placeholder="м"
         />
-        <button
+        <motion.button
           onClick={handleSave}
           disabled={saving}
-          className="ml-auto p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
+          whileTap={{ scale: 0.95 }}
+          className="ml-auto min-w-[48px] min-h-[48px] flex items-center justify-center rounded-lg bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50"
         >
-          <Check className="w-5 h-5" />
-        </button>
+          <Check className={`w-5 h-5 transition-colors ${justSaved ? 'text-green-400' : ''}`} />
+        </motion.button>
       </div>
     );
   }
@@ -119,7 +130,7 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
         <div className="flex items-center gap-0.5 flex-shrink-0">
           <button
             onClick={() => setIsEditing(true)}
-            className="p-2 rounded-lg text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800 transition-colors"
+            className="min-w-[48px] min-h-[48px] flex items-center justify-center rounded-lg text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800 transition-colors"
             title="Редактировать"
           >
             <Pencil className="w-5 h-5" />
@@ -128,7 +139,7 @@ export function HistorySetRow({ set, className = '', onSave, onDelete }: History
             <button
               onClick={handleDelete}
               disabled={deleting}
-              className="p-2 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              className="min-w-[48px] min-h-[48px] flex items-center justify-center rounded-lg text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition-colors disabled:opacity-50"
               title="Удалить"
             >
               <Trash2 className="w-5 h-5" />

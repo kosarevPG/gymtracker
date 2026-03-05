@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
   Search, Plus, Check, Trash2, StickyNote, ChevronDown, Calendar, 
-  ArrowLeft, Pencil, Trophy, Link as LinkIcon,
+  Pencil, Trophy, Link as LinkIcon,
   Cloud, CloudOff, RefreshCw
 } from 'lucide-react';
 import { getWeightInputType, calcEffectiveWeight, WEIGHT_FORMULAS, BODY_WEIGHT_DEFAULT, WEIGHT_TYPES, allows1rm } from './exerciseConfig';
@@ -13,7 +13,7 @@ import { ImageUploadSlot } from './components/ImageUploadSlot';
 import { motion, AnimatePresence } from 'framer-motion';
 import { subscribeToStatus, initNetworkListeners, syncAll, type SyncStatus } from './offlineSync';
 import { api } from './api';
-import { Card, Button, Input, Modal } from './ui';
+import { Card, Button, Input, Modal, StickyBottomBar } from './ui';
 import type { Screen, Exercise, WorkoutSet, ExerciseSessionData } from './types';
 import { HomeScreen, ExercisesListScreen, HistoryScreen, AnalyticsScreen, SettingsScreen } from './screens';
 import { useExerciseHistory } from './hooks';
@@ -314,29 +314,55 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-start mb-3">
-      <button onClick={() => onComplete(set.id)} className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${isCompleted ? 'bg-yellow-500 border-yellow-500' : 'bg-transparent border-zinc-700 hover:border-zinc-500'}`}>
+      <button onClick={() => onComplete(set.id)} className={`min-w-[48px] min-h-[48px] rounded-full border-2 flex items-center justify-center transition-all duration-200 ${isCompleted ? 'bg-yellow-500 border-yellow-500' : 'bg-transparent border-zinc-700 hover:border-zinc-500'}`}>
         {isCompleted && <Check className="w-6 h-6 text-black stroke-[3]" />}
       </button>
       
       <div className={`flex flex-col gap-1 ${inputDisabledClass}`}>
-        <input 
-          type="number" 
-          inputMode="decimal" 
-          pattern="[0-9.]*"
-          min="0"
-          step="0.5"
-          placeholder={formula.placeholder} 
-          value={set.weight} 
-          onChange={e => {
-            const v = e.target.value;
-            if (v === '') { onUpdate(set.id, 'weight', v); return; }
-            const num = parseFloat(v);
-            if (!isNaN(num) && num >= 0) onUpdate(set.id, 'weight', v);
-          }}
-          onBlur={() => { if (set.weight && repsRef.current) repsRef.current.focus(); }}
-          onFocus={e => e.target.select()}
-          className="w-full h-12 bg-zinc-800 rounded-xl text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums" 
-        />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              const cur = parseFloat(set.weight || '0') || 0;
+              const next = Math.max(0, cur - 2.5);
+              onUpdate(set.id, 'weight', next === 0 ? '' : String(next));
+            }}
+            className="min-w-[48px] min-h-[48px] rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors"
+            aria-label="Уменьшить вес"
+          >
+            −
+          </button>
+          <input 
+            type="number" 
+            inputMode="decimal" 
+            pattern="[0-9.]*"
+            min="0"
+            step="0.5"
+            placeholder={formula.placeholder} 
+            value={set.weight} 
+            onChange={e => {
+              const v = e.target.value;
+              if (v === '') { onUpdate(set.id, 'weight', v); return; }
+              const num = parseFloat(v);
+              if (!isNaN(num) && num >= 0) onUpdate(set.id, 'weight', v);
+            }}
+            onBlur={() => { if (set.weight && repsRef.current) repsRef.current.focus(); }}
+            onFocus={e => e.target.select()}
+            className="flex-1 min-h-[48px] bg-zinc-800 rounded-xl text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums" 
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const cur = parseFloat(set.weight || '0') || 0;
+              const next = cur + 2.5;
+              onUpdate(set.id, 'weight', String(next));
+            }}
+            className="min-w-[48px] min-h-[48px] rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors"
+            aria-label="Увеличить вес"
+          >
+            +
+          </button>
+        </div>
         <div className="flex justify-between items-center px-1 text-[10px] flex-wrap gap-x-2 gap-y-0.5">
           {showTotalBadge && effectiveWeight !== null && effectiveWeight >= 0 && (
             <span className="text-blue-400 font-medium">Итого: {effectiveWeight} кг</span>
@@ -376,7 +402,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
         value={set.reps} 
         onChange={e => onUpdate(set.id, 'reps', e.target.value)}
         onFocus={e => e.target.select()}
-        className={`w-full h-12 bg-zinc-800 rounded-xl text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
+        className={`w-full min-h-[48px] bg-zinc-800 rounded-xl text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
       />
       <input 
         type="number" 
@@ -386,14 +412,14 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
         value={set.rest} 
         onChange={e => onUpdate(set.id, 'rest', e.target.value)}
         onFocus={e => e.target.select()}
-        className={`w-full h-12 bg-zinc-800 rounded-xl text-center text-zinc-400 focus:text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
+        className={`w-full min-h-[48px] bg-zinc-800 rounded-xl text-center text-zinc-400 focus:text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
       />
       {isCompleted ? (
-        <button onClick={() => onToggleEdit(set.id)} className={`w-10 h-12 flex items-center justify-center transition-colors ${isEditing ? 'text-yellow-500' : 'text-zinc-600 hover:text-zinc-400'}`}>
+        <button onClick={() => onToggleEdit(set.id)} className={`min-w-[48px] min-h-[48px] flex items-center justify-center transition-colors ${isEditing ? 'text-yellow-500' : 'text-zinc-600 hover:text-zinc-400'}`}>
           <Pencil className="w-5 h-5" />
         </button>
       ) : (
-        <button onClick={() => onDelete(set.id)} className="w-10 h-12 flex items-center justify-center text-zinc-600 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+        <button onClick={() => onDelete(set.id)} className="min-w-[48px] min-h-[48px] flex items-center justify-center text-zinc-600 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
       )}
     </motion.div>
   );
@@ -474,8 +500,8 @@ const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompl
         ))}
       </div>
       <div className="flex gap-2 mt-4">
-        <Button variant="secondary" onClick={onAddSet} className="flex-1 h-12 bg-zinc-800/50 border border-dashed border-zinc-700 text-zinc-400 hover:text-blue-500"><Plus className="w-5 h-5 mr-2" /> Подход</Button>
-        <Button variant="ghost" onClick={onAddSuperset} className="w-1/3 h-12 border border-dashed border-zinc-800 text-zinc-500 hover:text-white"><Plus className="w-4 h-4 mr-1" /> Сет</Button>
+        <Button variant="secondary" onClick={onAddSet} className="flex-1 bg-zinc-800/50 border border-dashed border-zinc-700 text-zinc-400 hover:text-blue-500"><Plus className="w-5 h-5 mr-2" /> Подход</Button>
+        <Button variant="ghost" onClick={onAddSuperset} className="w-1/3 border border-dashed border-zinc-800 text-zinc-500 hover:text-white"><Plus className="w-4 h-4 mr-1" /> Сет</Button>
       </div>
     </Card>
   );
@@ -804,26 +830,22 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 pb-20">
+    <div className="min-h-screen bg-zinc-950 pb-28">
       <TimerBlock timer={timer} onToggle={() => timer.isRunning ? timer.reset() : timer.start()} sessionTonnage={sessionTonnage} />
-      <div className="px-4 space-y-4">
+      <div className="px-4 space-y-4 pb-4">
         {activeExercises.map(exId => {
             const data = sessionData[exId];
             if (!data) return <div key={exId} className="h-40 bg-zinc-900 rounded-2xl animate-pulse" />;
             return <WorkoutCard key={exId} exerciseData={data} onAddSet={() => handleAddSet(exId)} onUpdateSet={(sid: string, f: string, v: string | number) => handleUpdateSet(exId, sid, f, v)} onDeleteSet={(sid: string) => handleDeleteSet(exId, sid)} onCompleteSet={(sid: string) => handleCompleteSet(exId, sid)} onToggleEdit={(sid: string) => handleToggleEdit(exId, sid)} onNoteChange={(val: string) => setSessionData(p => ({...p, [exId]: {...p[exId], note: val}}))} onAddSuperset={() => setIsAddModalOpen(true)} onEditMetadata={() => setExerciseToEdit(data.exercise)} />;
         })}
       </div>
-      <div className="px-4 mt-8 mb-20"><Button variant="primary" onClick={handleFinishClick} className="w-full h-14 text-lg font-semibold shadow-xl shadow-blue-900/20">Завершить упражнение</Button></div>
+      <StickyBottomBar>
+        <Button variant="primary" onClick={handleFinishClick} className="w-full min-h-[48px] text-lg font-semibold shadow-xl shadow-blue-900/20">Завершить тренировку</Button>
+      </StickyBottomBar>
       <Modal isOpen={isFinishModalOpen} onClose={() => setIsFinishModalOpen(false)} title="Завершить тренировку">
         <div className="space-y-4">
-          <div>
-            <label className="text-sm text-zinc-400 mb-1 block">Оцените тяжесть тренировки (sRPE) от 1 до 10</label>
-            <Input type="number" min={1} max={10} step={1} placeholder="1–10" value={finishSrpe} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFinishSrpe(e.target.value)} />
-          </div>
-          <div>
-            <label className="text-sm text-zinc-400 mb-1 block">Ваш текущий вес тела (кг)</label>
-            <Input type="number" inputMode="decimal" min={0} step={0.1} placeholder="кг" value={finishBodyWeight} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFinishBodyWeight(e.target.value)} />
-          </div>
+          <Input label="Оцените тяжесть тренировки (sRPE) от 1 до 10" type="number" min={1} max={10} step={1} placeholder="1–10" value={finishSrpe} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFinishSrpe(e.target.value)} />
+          <Input label="Ваш текущий вес тела (кг)" type="number" inputMode="decimal" min={0} step={0.1} placeholder="кг" value={finishBodyWeight} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFinishBodyWeight(e.target.value)} rightAddon="кг" />
           <div className="flex gap-2 pt-2">
             <Button variant="ghost" onClick={handleConfirmFinish} className="flex-1">Пропустить</Button>
             <Button variant="primary" onClick={handleConfirmFinish} className="flex-1">Завершить</Button>
@@ -832,16 +854,14 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
       </Modal>
       <Modal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setSupersetSearchQuery(''); }} title="Добавить в суперсет">
         <div className="space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-            <Input 
-              placeholder="Поиск упражнения..." 
-              value={supersetSearchQuery}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSupersetSearchQuery(e.target.value)}
-              onFocus={(e: React.FocusEvent<HTMLInputElement>) => e.target.select()}
-              className="pl-10 bg-zinc-900 w-full" 
-            />
-          </div>
+          <Input 
+            placeholder="Поиск упражнения..." 
+            value={supersetSearchQuery}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSupersetSearchQuery(e.target.value)}
+            onFocus={(e: React.FocusEvent<HTMLInputElement>) => e.target.select()}
+            leftIcon={<Search className="w-4 h-4" />}
+            className="bg-zinc-900 w-full" 
+          />
           <div className="space-y-2 max-h-[400px] overflow-y-auto">
             {allExercises
               .filter((ex: Exercise) => 
@@ -871,7 +891,6 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
           </div>
         </div>
       </Modal>
-      <div className="fixed bottom-6 left-6 z-20"><button onClick={handleFinishClick} className="w-12 h-12 rounded-full bg-zinc-800 text-zinc-400 flex items-center justify-center border border-zinc-700 shadow-lg hover:text-white"><ArrowLeft className="w-6 h-6" /></button></div>
     </div>
   );
 };

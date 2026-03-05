@@ -66,8 +66,7 @@ export const HomeScreen = ({ groups, onSearch, onSelectGroup, onAllExercises, on
       <div className="p-4 space-y-6">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
-            <Input placeholder="Найти..." value={searchQuery || ''} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearch(e.target.value)} className="pl-12 bg-zinc-900 w-full" />
+            <Input placeholder="Найти..." value={searchQuery || ''} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearch(e.target.value)} leftIcon={<Search className="w-5 h-5" />} className="bg-zinc-900 w-full" />
           </div>
           <button onClick={onAnalytics} className="p-3 bg-zinc-900 rounded-xl text-zinc-400 hover:text-blue-500"><BarChart3 className="w-6 h-6" /></button>
           <button onClick={onHistory} className="p-3 bg-zinc-900 rounded-xl text-zinc-400 hover:text-blue-500"><HistoryIcon className="w-6 h-6" /></button>

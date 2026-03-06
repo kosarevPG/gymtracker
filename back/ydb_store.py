@@ -430,7 +430,7 @@ def export_logs_csv() -> str:
     columns = ['id', 'date', 'order', 'exercise_name', 'input_weight', 'total_weight', 'reps', 'rest', 'set_type', 'rpe', 'rir', 'is_low_confidence', 'session_id']
     try:
         result = pool.execute_with_retries(f"""
-            SELECT * FROM log ORDER BY date DESC LIMIT {EXPORT_CSV_LIMIT};
+            SELECT id, date, exercise_id, exercise_name, input_weight, total_weight, reps, rest, set_group_id, session_id, note, ord, set_type, rpe, rir, is_low_confidence FROM log ORDER BY date DESC LIMIT {EXPORT_CSV_LIMIT};
         """)
         rows = result[0].rows if result and result[0].rows else []
         ex_map = {e['id']: e for e in get_all_exercises()['exercises']}

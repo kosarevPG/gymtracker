@@ -77,7 +77,6 @@ def main():
                 rpe Double,
                 rir Uint32,
                 is_low_confidence Bool,
-                updated_at Timestamp,
                 PRIMARY KEY (id)
             );
         """),

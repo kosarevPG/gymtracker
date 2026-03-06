@@ -763,84 +763,79 @@ def get_global_history(limit_rows: int = 1500) -> List[Dict]:
     pool = get_pool()
     if not pool:
         return []
-    try:
-        result_sets = pool.execute_with_retries("""
-            DECLARE $limit_rows AS Int64;
-            SELECT id, date, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir FROM log
-            ORDER BY date DESC LIMIT $limit_rows;
-        """, {"$limit_rows": limit_rows})
-        ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
-        days = {}
-        for row in result_sets[0].rows:
-            raw_date = getattr(row, 'date', '')
-            date_val = _parse_date_val(raw_date)
-            ex_id = getattr(row, 'exercise_id', '')
-            ex_info = ex_map.get(ex_id, {})
-            ex_name = ex_info.get('name') or getattr(row, 'exercise_name', '') or 'Unknown'
-            muscle = ex_info.get('muscleGroup', 'Other')
-            if date_val not in days:
-                days[date_val] = {"date": date_val, "muscleGroups": set(), "exercises": []}
-            days[date_val]["muscleGroups"].add(muscle)
-            set_type_val = getattr(row, 'set_type', None) or None
-            rpe_val = getattr(row, 'rpe', None)
-            rir_val = getattr(row, 'rir', None)
-            days[date_val]["exercises"].append({
-                "id": getattr(row, 'id', ''),
-                "exerciseId": ex_id,
-                "exerciseName": ex_name,
-                "weight": _to_float(getattr(row, 'total_weight', None)),
-                "reps": _to_int(getattr(row, 'reps', 0)),
-                "rest": _to_float(getattr(row, 'rest', None)),
-                "order": _to_int(getattr(row, 'ord', 0)),
-                "setGroupId": getattr(row, 'set_group_id', '') or "",
-                "set_type": str(set_type_val) if set_type_val else None,
-                "rpe": _to_float(rpe_val) if rpe_val is not None and str(rpe_val).strip() != '' else None,
-                "rir": _to_int(rir_val) if rir_val is not None and str(rir_val).strip() != '' else None,
+    result_sets = pool.execute_with_retries(f"""
+        SELECT id, date, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir FROM log
+        ORDER BY date DESC LIMIT {limit_rows};
+    """)
+    ex_map = {e['id']: e for e in get_all_exercises()['exercises']}
+    days = {}
+    for row in result_sets[0].rows:
+        raw_date = getattr(row, 'date', '')
+        date_val = _parse_date_val(raw_date)
+        ex_id = getattr(row, 'exercise_id', '')
+        ex_info = ex_map.get(ex_id, {})
+        ex_name = ex_info.get('name') or getattr(row, 'exercise_name', '') or 'Unknown'
+        muscle = ex_info.get('muscleGroup', 'Other')
+        if date_val not in days:
+            days[date_val] = {"date": date_val, "muscleGroups": set(), "exercises": []}
+        days[date_val]["muscleGroups"].add(muscle)
+        set_type_val = getattr(row, 'set_type', None) or None
+        rpe_val = getattr(row, 'rpe', None)
+        rir_val = getattr(row, 'rir', None)
+        days[date_val]["exercises"].append({
+            "id": getattr(row, 'id', ''),
+            "exerciseId": ex_id,
+            "exerciseName": ex_name,
+            "weight": _to_float(getattr(row, 'total_weight', None)),
+            "reps": _to_int(getattr(row, 'reps', 0)),
+            "rest": _to_float(getattr(row, 'rest', None)),
+            "order": _to_int(getattr(row, 'ord', 0)),
+            "setGroupId": getattr(row, 'set_group_id', '') or "",
+            "set_type": str(set_type_val) if set_type_val else None,
+            "rpe": _to_float(rpe_val) if rpe_val is not None and str(rpe_val).strip() != '' else None,
+            "rir": _to_int(rir_val) if rir_val is not None and str(rir_val).strip() != '' else None,
+        })
+    result = []
+    for date_val, day_data in sorted(days.items(), key=lambda x: x[0], reverse=True):
+        raw = day_data["exercises"]
+        raw.sort(key=lambda x: x.get('order', 0))
+        exercises_grouped = {}
+        for ex in raw:
+            key = f"{ex['exerciseName']}_{ex.get('setGroupId', '')}" or ex['exerciseName']
+            if key not in exercises_grouped:
+                exercises_grouped[key] = {"name": ex["exerciseName"], "exerciseId": ex.get("exerciseId", ""), "setGroupId": ex.get("setGroupId", ""), "sets": []}
+            exercises_grouped[key]["sets"].append({
+                "id": ex.get("id"),
+                "exerciseId": ex.get("exerciseId"),
+                "setGroupId": ex.get("setGroupId", ""),
+                "order": ex.get("order", 0),
+                "weight": ex["weight"],
+                "reps": ex["reps"],
+                "rest": ex["rest"],
+                "set_type": ex.get("set_type"),
+                "rpe": ex.get("rpe"),
+                "rir": ex.get("rir"),
             })
-        result = []
-        for date_val, day_data in sorted(days.items(), key=lambda x: x[0], reverse=True):
-            raw = day_data["exercises"]
-            raw.sort(key=lambda x: x.get('order', 0))
-            exercises_grouped = {}
-            for ex in raw:
-                key = f"{ex['exerciseName']}_{ex.get('setGroupId', '')}" or ex['exerciseName']
-                if key not in exercises_grouped:
-                    exercises_grouped[key] = {"name": ex["exerciseName"], "exerciseId": ex.get("exerciseId", ""), "setGroupId": ex.get("setGroupId", ""), "sets": []}
-                exercises_grouped[key]["sets"].append({
-                    "id": ex.get("id"),
-                    "exerciseId": ex.get("exerciseId"),
-                    "setGroupId": ex.get("setGroupId", ""),
-                    "order": ex.get("order", 0),
-                    "weight": ex["weight"],
-                    "reps": ex["reps"],
-                    "rest": ex["rest"],
-                    "set_type": ex.get("set_type"),
-                    "rpe": ex.get("rpe"),
-                    "rir": ex.get("rir"),
-                })
-            set_group_count = {}
-            for ex_data in exercises_grouped.values():
-                sg = ex_data.get("setGroupId", "")
-                if sg:
-                    set_group_count[sg] = set_group_count.get(sg, 0) + 1
-            grouped_list = []
-            for ex_data in exercises_grouped.values():
-                sg = ex_data.get("setGroupId", "")
-                is_superset = sg and set_group_count.get(sg, 0) > 1
-                grouped_list.append({
-                    "name": ex_data["name"],
-                    "exerciseId": ex_data.get("exerciseId", ""),
-                    "supersetId": sg if is_superset else None,
-                    "sets": ex_data["sets"]
-                })
-            result.append({
-                "id": date_val,
-                "date": date_val,
-                "muscleGroups": sorted(list(day_data["muscleGroups"])),
-                "duration": f"{len(raw) * 2}м",
-                "exercises": grouped_list
+        set_group_count = {}
+        for ex_data in exercises_grouped.values():
+            sg = ex_data.get("setGroupId", "")
+            if sg:
+                set_group_count[sg] = set_group_count.get(sg, 0) + 1
+        grouped_list = []
+        for ex_data in exercises_grouped.values():
+            sg = ex_data.get("setGroupId", "")
+            is_superset = sg and set_group_count.get(sg, 0) > 1
+            grouped_list.append({
+                "name": ex_data["name"],
+                "exerciseId": ex_data.get("exerciseId", ""),
+                "supersetId": sg if is_superset else None,
+                "sets": ex_data["sets"]
             })
-        return result
-    except Exception as e:
-        logger.error(f"get_global_history: {e}", exc_info=True)
-        return []
+        result.append({
+            "id": date_val,
+            "date": date_val,
+            "muscleGroups": sorted(list(day_data["muscleGroups"])),
+            "duration": f"{len(raw) * 2}м",
+            "exercises": grouped_list
+        })
+    return result

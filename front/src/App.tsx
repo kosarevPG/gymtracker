@@ -327,7 +327,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
               const next = Math.max(0, cur - 2.5);
               onUpdate(set.id, 'weight', next === 0 ? '' : String(next));
             }}
-            className="min-w-[48px] min-h-[48px] rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors"
+            className="min-w-[48px] min-h-[48px] shrink-0 rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors"
             aria-label="Уменьшить вес"
           >
             −
@@ -348,7 +348,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
             }}
             onBlur={() => { if (set.weight && repsRef.current) repsRef.current.focus(); }}
             onFocus={e => e.target.select()}
-            className="flex-1 min-h-[48px] bg-zinc-800 rounded-xl text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums" 
+            className="flex-1 max-w-[100px] min-h-[48px] bg-zinc-800 rounded-xl px-1 text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums" 
           />
           <button
             type="button"
@@ -357,7 +357,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
               const next = cur + 2.5;
               onUpdate(set.id, 'weight', String(next));
             }}
-            className="min-w-[48px] min-h-[48px] rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors"
+            className="min-w-[48px] min-h-[48px] shrink-0 rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors"
             aria-label="Увеличить вес"
           >
             +
@@ -402,7 +402,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
         value={set.reps} 
         onChange={e => onUpdate(set.id, 'reps', e.target.value)}
         onFocus={e => e.target.select()}
-        className={`w-full min-h-[48px] bg-zinc-800 rounded-xl text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
+        className={`w-full max-w-[80px] min-h-[48px] bg-zinc-800 rounded-xl px-1 text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
       />
       <input 
         type="number" 
@@ -412,7 +412,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
         value={set.rest} 
         onChange={e => onUpdate(set.id, 'rest', e.target.value)}
         onFocus={e => e.target.select()}
-        className={`w-full min-h-[48px] bg-zinc-800 rounded-xl text-center text-zinc-400 focus:text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
+        className={`w-full max-w-[60px] min-h-[48px] bg-zinc-800 rounded-xl px-1 text-center text-zinc-400 focus:text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
       />
       {isCompleted ? (
         <button onClick={() => onToggleEdit(set.id)} className={`min-w-[48px] min-h-[48px] flex items-center justify-center transition-colors ${isEditing ? 'text-yellow-500' : 'text-zinc-600 hover:text-zinc-400'}`}>

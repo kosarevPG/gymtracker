@@ -765,7 +765,7 @@ def get_global_history(limit_rows: int = 1500) -> List[Dict]:
         return []
     try:
         result_sets = pool.execute_with_retries("""
-            DECLARE $limit_rows AS Uint64;
+            DECLARE $limit_rows AS Int64;
             SELECT id, date, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir FROM log
             ORDER BY date DESC LIMIT $limit_rows;
         """, {"$limit_rows": limit_rows})

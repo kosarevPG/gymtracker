@@ -313,114 +313,113 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
   const rirVal = set.rir !== undefined && set.rir !== '' ? Number(set.rir) : undefined;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-start mb-3">
-      <button onClick={() => onComplete(set.id)} className={`min-w-[48px] min-h-[48px] rounded-full border-2 flex items-center justify-center transition-all duration-200 ${isCompleted ? 'bg-yellow-500 border-yellow-500' : 'bg-transparent border-zinc-700 hover:border-zinc-500'}`}>
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-[48px_32px_minmax(0,1fr)_32px_20px_minmax(0,80px)_minmax(0,60px)_48px] gap-1.5 items-center mb-3">
+      <button onClick={() => onComplete(set.id)} className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${isCompleted ? 'bg-yellow-500 border-yellow-500' : 'bg-transparent border-zinc-700 hover:border-zinc-500'}`}>
         {isCompleted && <Check className="w-6 h-6 text-black stroke-[3]" />}
       </button>
-      
-      <div className={`flex flex-col gap-1 ${inputDisabledClass}`}>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              const cur = parseFloat(set.weight || '0') || 0;
-              const next = Math.max(0, cur - 2.5);
-              onUpdate(set.id, 'weight', next === 0 ? '' : String(next));
-            }}
-            className="min-w-[48px] min-h-[48px] shrink-0 rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors"
-            aria-label="Уменьшить вес"
-          >
-            −
-          </button>
-          <input 
-            type="number" 
-            inputMode="decimal" 
-            pattern="[0-9.]*"
-            min="0"
-            step="0.5"
-            placeholder={formula.placeholder} 
-            value={set.weight} 
-            onChange={e => {
-              const v = e.target.value;
-              if (v === '') { onUpdate(set.id, 'weight', v); return; }
-              const num = parseFloat(v);
-              if (!isNaN(num) && num >= 0) onUpdate(set.id, 'weight', v);
-            }}
-            onBlur={() => { if (set.weight && repsRef.current) repsRef.current.focus(); }}
-            onFocus={e => e.target.select()}
-            className="flex-1 max-w-[100px] min-h-[48px] bg-zinc-800 rounded-xl px-1 text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums" 
-          />
-          <button
-            type="button"
-            onClick={() => {
-              const cur = parseFloat(set.weight || '0') || 0;
-              const next = cur + 2.5;
-              onUpdate(set.id, 'weight', String(next));
-            }}
-            className="min-w-[48px] min-h-[48px] shrink-0 rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors"
-            aria-label="Увеличить вес"
-          >
-            +
-          </button>
-        </div>
-        <div className="flex justify-between items-center px-1 text-[10px] flex-wrap gap-x-2 gap-y-0.5">
-          {showTotalBadge && effectiveWeight !== null && effectiveWeight >= 0 && (
-            <span className="text-blue-400 font-medium">Итого: {effectiveWeight} кг</span>
-          )}
-          {show1rm && oneRM > 0 && (
-            <span className="text-zinc-500">1PM: {oneRM}{rirVal !== undefined && rirVal >= 0 ? ` RIR${rirVal}` : ''}</span>
-          )}
-          {!show1rm && (weightType === 'assisted' || weightType === 'bodyweight') && (
-            <span className="text-zinc-600 text-[9px]">1RM не рассчитывается</span>
-          )}
-          {asi !== null && <span className="text-zinc-500">ASI: {asi}</span>}
-          {set.prevWeight !== undefined && displayWeight > 0 && <span className={`${deltaColor} font-medium`}>{deltaText}</span>}
-          <button
-            type="button"
-            onClick={() => {
-              const idx = SET_TYPE_ORDER.indexOf(currentSetType);
-              const next = SET_TYPE_ORDER[(idx + 1) % 4];
-              onUpdate(set.id, 'setType', next);
-            }}
-            className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${currentSetType === 'warmup' ? 'bg-zinc-600 text-zinc-300' : currentSetType === 'working' ? 'bg-blue-600/50 text-blue-300' : currentSetType === 'drop' ? 'bg-orange-600/50 text-orange-300' : 'bg-red-600/50 text-red-300'}`}
-          >
-            {SET_TYPE_LABEL[currentSetType]}
-          </button>
-          <div className="flex gap-0.5">
-            {[0, 1, 2, 3].map(r => (
-              <button key={r} type="button" onClick={() => onUpdate(set.id, 'rir', r)} className={`px-1.5 py-0.5 rounded text-[9px] ${rirVal === r ? 'bg-zinc-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}>{r === 3 ? '3+' : r}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <input 
+      <button
+        type="button"
+        onClick={() => {
+          const cur = parseFloat(set.weight || '0') || 0;
+          const next = Math.max(0, cur - 2.5);
+          onUpdate(set.id, 'weight', next === 0 ? '' : String(next));
+        }}
+        className={`w-8 h-12 rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors ${inputDisabledClass}`}
+        aria-label="Уменьшить вес"
+      >
+        −
+      </button>
+      <input
+        type="number"
+        inputMode="decimal"
+        pattern="[0-9.]*"
+        min="0"
+        step="0.5"
+        placeholder={formula.placeholder}
+        value={set.weight}
+        onChange={e => {
+          const v = e.target.value;
+          if (v === '') { onUpdate(set.id, 'weight', v); return; }
+          const num = parseFloat(v);
+          if (!isNaN(num) && num >= 0) onUpdate(set.id, 'weight', v);
+        }}
+        onBlur={() => { if (set.weight && repsRef.current) repsRef.current.focus(); }}
+        onFocus={e => e.target.select()}
+        className={`min-w-0 min-h-[48px] bg-zinc-800 rounded-xl px-2 text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`}
+      />
+      <button
+        type="button"
+        onClick={() => {
+          const cur = parseFloat(set.weight || '0') || 0;
+          const next = cur + 2.5;
+          onUpdate(set.id, 'weight', String(next));
+        }}
+        className={`w-8 h-12 rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors ${inputDisabledClass}`}
+        aria-label="Увеличить вес"
+      >
+        +
+      </button>
+      <div className="flex items-center justify-center text-zinc-700 text-lg">×</div>
+      <input
         ref={repsRef}
-        type="tel" 
-        inputMode="numeric" 
+        type="tel"
+        inputMode="numeric"
         pattern="[0-9]*"
-        placeholder="0" 
-        value={set.reps} 
+        placeholder="0"
+        value={set.reps}
         onChange={e => onUpdate(set.id, 'reps', e.target.value)}
         onFocus={e => e.target.select()}
-        className={`w-full max-w-[80px] min-h-[48px] bg-zinc-800 rounded-xl px-1 text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
+        className={`min-w-0 min-h-[48px] bg-zinc-800 rounded-xl px-2 text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`}
       />
-      <input 
-        type="number" 
-        inputMode="decimal" 
+      <input
+        type="number"
+        inputMode="decimal"
         pattern="[0-9.]*"
-        placeholder="0" 
-        value={set.rest} 
+        placeholder="0"
+        value={set.rest}
         onChange={e => onUpdate(set.id, 'rest', e.target.value)}
         onFocus={e => e.target.select()}
-        className={`w-full max-w-[60px] min-h-[48px] bg-zinc-800 rounded-xl px-1 text-center text-zinc-400 focus:text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`} 
+        className={`min-w-0 min-h-[48px] bg-zinc-800 rounded-xl px-2 text-center text-zinc-400 focus:text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`}
       />
       {isCompleted ? (
-        <button onClick={() => onToggleEdit(set.id)} className={`min-w-[48px] min-h-[48px] flex items-center justify-center transition-colors ${isEditing ? 'text-yellow-500' : 'text-zinc-600 hover:text-zinc-400'}`}>
+        <button onClick={() => onToggleEdit(set.id)} className={`w-12 h-12 flex items-center justify-center transition-colors ${isEditing ? 'text-yellow-500' : 'text-zinc-600 hover:text-zinc-400'}`}>
           <Pencil className="w-5 h-5" />
         </button>
       ) : (
-        <button onClick={() => onDelete(set.id)} className="min-w-[48px] min-h-[48px] flex items-center justify-center text-zinc-600 hover:text-red-500"><Trash2 className="w-5 h-5" /></button>
+        <button onClick={() => onDelete(set.id)} className="w-12 h-12 flex items-center justify-center text-zinc-600 hover:text-red-500">
+          <Trash2 className="w-5 h-5" />
+        </button>
       )}
+      {/* Вторая строка: бейджи (1RM, set type, RIR и т.д.) */}
+      <div className="col-span-8 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[10px]">
+        {showTotalBadge && effectiveWeight !== null && effectiveWeight >= 0 && (
+          <span className="text-blue-400 font-medium">Итого: {effectiveWeight} кг</span>
+        )}
+        {show1rm && oneRM > 0 && (
+          <span className="text-zinc-500">1PM: {oneRM}{rirVal !== undefined && rirVal >= 0 ? ` RIR${rirVal}` : ''}</span>
+        )}
+        {!show1rm && (weightType === 'assisted' || weightType === 'bodyweight') && (
+          <span className="text-zinc-600 text-[9px]">1RM не рассчитывается</span>
+        )}
+        {asi !== null && <span className="text-zinc-500">ASI: {asi}</span>}
+        {set.prevWeight !== undefined && displayWeight > 0 && <span className={`${deltaColor} font-medium`}>{deltaText}</span>}
+        <button
+          type="button"
+          onClick={() => {
+            const idx = SET_TYPE_ORDER.indexOf(currentSetType);
+            const next = SET_TYPE_ORDER[(idx + 1) % 4];
+            onUpdate(set.id, 'setType', next);
+          }}
+          className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${currentSetType === 'warmup' ? 'bg-zinc-600 text-zinc-300' : currentSetType === 'working' ? 'bg-blue-600/50 text-blue-300' : currentSetType === 'drop' ? 'bg-orange-600/50 text-orange-300' : 'bg-red-600/50 text-red-300'}`}
+        >
+          {SET_TYPE_LABEL[currentSetType]}
+        </button>
+        <div className="flex gap-0.5">
+          {[0, 1, 2, 3].map(r => (
+            <button key={r} type="button" onClick={() => onUpdate(set.id, 'rir', r)} className={`px-1.5 py-0.5 rounded text-[9px] ${rirVal === r ? 'bg-zinc-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}>{r === 3 ? '3+' : r}</button>
+          ))}
+        </div>
+      </div>
     </motion.div>
   );
 };

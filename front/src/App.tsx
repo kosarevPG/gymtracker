@@ -313,21 +313,9 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
   const rirVal = set.rir !== undefined && set.rir !== '' ? Number(set.rir) : undefined;
 
   return (
-    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-[48px_32px_minmax(0,1fr)_32px_20px_minmax(0,80px)_minmax(0,60px)_48px] gap-1.5 items-center mb-3">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-[48px_1fr_20px_1fr_1fr_48px] gap-1.5 items-center mb-3">
       <button onClick={() => onComplete(set.id)} className={`w-12 h-12 rounded-full border-2 flex items-center justify-center transition-all duration-200 ${isCompleted ? 'bg-yellow-500 border-yellow-500' : 'bg-transparent border-zinc-700 hover:border-zinc-500'}`}>
         {isCompleted && <Check className="w-6 h-6 text-black stroke-[3]" />}
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          const cur = parseFloat(set.weight || '0') || 0;
-          const next = Math.max(0, cur - 2.5);
-          onUpdate(set.id, 'weight', next === 0 ? '' : String(next));
-        }}
-        className={`w-8 h-12 rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors ${inputDisabledClass}`}
-        aria-label="Уменьшить вес"
-      >
-        −
       </button>
       <input
         type="number"
@@ -347,18 +335,6 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
         onFocus={e => e.target.select()}
         className={`min-w-0 min-h-[48px] bg-zinc-800 rounded-xl px-2 text-center text-xl font-bold text-zinc-100 focus:ring-1 focus:ring-blue-500 outline-none tabular-nums ${inputDisabledClass}`}
       />
-      <button
-        type="button"
-        onClick={() => {
-          const cur = parseFloat(set.weight || '0') || 0;
-          const next = cur + 2.5;
-          onUpdate(set.id, 'weight', String(next));
-        }}
-        className={`w-8 h-12 rounded-xl bg-zinc-800 text-zinc-400 flex items-center justify-center font-bold text-xl hover:bg-zinc-700 active:scale-95 transition-colors ${inputDisabledClass}`}
-        aria-label="Увеличить вес"
-      >
-        +
-      </button>
       <div className="flex items-center justify-center text-zinc-700 text-lg">×</div>
       <input
         ref={repsRef}
@@ -391,7 +367,7 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
         </button>
       )}
       {/* Вторая строка: бейджи (1RM, set type, RIR и т.д.) */}
-      <div className="col-span-8 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[10px]">
+      <div className="col-span-6 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[10px]">
         {showTotalBadge && effectiveWeight !== null && effectiveWeight >= 0 && (
           <span className="text-blue-400 font-medium">Итого: {effectiveWeight} кг</span>
         )}
@@ -486,12 +462,13 @@ const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompl
       </div>
       <NoteWidget initialValue={exerciseData.note} onChange={onNoteChange} />
       <HistoryListModal isOpen={showHistoryModal} onClose={() => setShowHistoryModal(false)} exerciseId={exerciseData.exercise.id} exerciseName={exerciseData.exercise.name} />
-      <div className="grid grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 mb-2 px-1">
-        <div className="w-10" />
+      <div className="grid grid-cols-[48px_1fr_20px_1fr_1fr_48px] gap-1.5 mb-2 px-1 items-center">
+        <div />
         <div className="text-[10px] text-center text-zinc-500 font-bold uppercase">{WEIGHT_FORMULAS[getWeightInputType(exerciseData.exercise.equipmentType, exerciseData.exercise.weightType)].label}</div>
+        <div />
         <div className="text-[10px] text-center text-zinc-500 font-bold uppercase">ПОВТ</div>
         <div className="text-[10px] text-center text-zinc-500 font-bold uppercase">МИН</div>
-        <div className="w-8" />
+        <div />
       </div>
       <div className="space-y-1">
         {exerciseData.sets.map((set: any) => (

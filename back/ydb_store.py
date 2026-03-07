@@ -476,17 +476,15 @@ def start_session(body_weight: float = 0) -> Dict:
         return {"session_id": "", "error": "YDB not configured"}
     session_id = str(uuid.uuid4())
     now = datetime.now(MOSCOW_TZ)
-    now_ts = int(now.timestamp() * 1_000_000)
     date_str = now.strftime('%Y.%m.%d')
     try:
         pool.execute_with_retries("""
             DECLARE $id AS Utf8;
             DECLARE $date_str AS Utf8;
-            DECLARE $now_ts AS Int64;
             DECLARE $body_weight AS Double;
             UPSERT INTO sessions (id, date, start_ts, end_ts, duration_sec, srpe, body_weight)
-            VALUES ($id, $date_str, DateTime::FromMicroseconds($now_ts), DateTime::FromMicroseconds($now_ts), 0, 0, $body_weight);
-        """, {"$id": session_id, "$date_str": date_str, "$now_ts": now_ts, "$body_weight": _to_float(body_weight)})
+            VALUES ($id, $date_str, CurrentUtcDatetime(), CurrentUtcDatetime(), 0, 0, $body_weight);
+        """, {"$id": session_id, "$date_str": date_str, "$body_weight": _to_float(body_weight)})
         return {"session_id": session_id, "date": date_str}
     except Exception as e:
         logger.error(f"start_session: {e}", exc_info=True)
@@ -500,7 +498,6 @@ def finish_session(session_id: str, srpe: float = 0, body_weight: float = 0) -> 
         return False
     try:
         now = datetime.now(MOSCOW_TZ)
-        now_ts = int(now.timestamp() * 1_000_000)
         result = pool.execute_with_retries("""
             DECLARE $session_id AS Utf8;
             SELECT start_ts FROM sessions WHERE id = $session_id;
@@ -514,13 +511,12 @@ def finish_session(session_id: str, srpe: float = 0, body_weight: float = 0) -> 
         duration_sec = int(now.timestamp()) - start_sec
         pool.execute_with_retries("""
             DECLARE $session_id AS Utf8;
-            DECLARE $now_ts AS Int64;
             DECLARE $duration_sec AS Int32;
             DECLARE $srpe AS Double;
             DECLARE $body_weight AS Double;
-            UPDATE sessions SET end_ts = DateTime::FromMicroseconds($now_ts), duration_sec = $duration_sec, srpe = $srpe, body_weight = $body_weight
+            UPDATE sessions SET end_ts = CurrentUtcDatetime(), duration_sec = $duration_sec, srpe = $srpe, body_weight = $body_weight
             WHERE id = $session_id;
-        """, {"$session_id": session_id, "$now_ts": now_ts, "$duration_sec": duration_sec, "$srpe": _to_float(srpe), "$body_weight": _to_float(body_weight)})
+        """, {"$session_id": session_id, "$duration_sec": duration_sec, "$srpe": _to_float(srpe), "$body_weight": _to_float(body_weight)})
         return True
     except Exception as e:
         logger.error(f"finish_session: {e}", exc_info=True)

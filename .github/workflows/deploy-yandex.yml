@@ -19,11 +19,18 @@ jobs:
       - name: Check credentials
         id: creds
         run: |
-          if [ -n "${{ secrets.YC_SA_JSON_CREDENTIALS }}" ]; then
-            echo "has_creds=true" >> $GITHUB_OUTPUT
-          else
+          MISSING=""
+          [ -z "${{ secrets.YC_SA_JSON_CREDENTIALS }}" ] && MISSING="${MISSING}YC_SA_JSON_CREDENTIALS "
+          [ -z "${{ secrets.YC_BUCKET }}" ] && MISSING="${MISSING}YC_BUCKET "
+          [ -z "${{ secrets.YC_FOLDER_ID }}" ] && MISSING="${MISSING}YC_FOLDER_ID "
+          [ -z "${{ secrets.YDB_ENDPOINT }}" ] && MISSING="${MISSING}YDB_ENDPOINT "
+          [ -z "${{ secrets.YDB_DATABASE }}" ] && MISSING="${MISSING}YDB_DATABASE "
+          [ -z "${{ secrets.AUTH_TOKEN }}" ] && MISSING="${MISSING}AUTH_TOKEN "
+          if [ -z "${{ secrets.YC_SA_JSON_CREDENTIALS }}" ]; then
             echo "has_creds=false" >> $GITHUB_OUTPUT
-            echo "::warning::Секреты не настроены. Добавьте YC_SA_JSON_CREDENTIALS и др. в Settings → Secrets → Actions. См. docs/DEPLOY_YANDEX.md"
+            echo "::warning::Секреты не настроены. Добавьте в Settings → Secrets and variables → Actions: $MISSING. См. docs/DEPLOY_YANDEX.md"
+          else
+            echo "has_creds=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Deploy to Yandex Cloud Function

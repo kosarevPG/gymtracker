@@ -763,6 +763,7 @@ def get_global_history(limit_rows: int = 1500) -> List[Dict]:
     pool = get_pool()
     if not pool:
         return []
+    # LIMIT через f-string — YDB требует Uint64 для параметра, Python передаёт Int64
     result_sets = pool.execute_with_retries(f"""
         SELECT id, date, exercise_id, exercise_name, total_weight, reps, rest, ord, set_group_id, set_type, rpe, rir FROM log
         ORDER BY date DESC LIMIT {limit_rows};

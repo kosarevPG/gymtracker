@@ -33,6 +33,7 @@ YDB_ENDPOINT=... YDB_DATABASE=... YDB_METADATA_CREDENTIALS=1 python run_migratio
 | `YC_BUCKET` | Имя бакета Object Storage для кода функции |
 | `YC_FOLDER_ID` | ID каталога в Yandex Cloud (например `b1g...`) |
 | `YC_FUNCTION_NAME` | Имя функции (опционально, по умолчанию `gymtracker-api`) |
+| `YC_SA_ID` | ID сервисного аккаунта (например `aje...`) — для привязки к функции при деплое |
 | `YDB_ENDPOINT` | Endpoint YDB (например `grpcs://ydb.serverless.yandexcloud.net:2135`) |
 | `YDB_DATABASE` | Путь к базе YDB |
 | `AUTH_TOKEN` | Секретный токен для X-Auth-Token |

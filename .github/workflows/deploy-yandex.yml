@@ -26,6 +26,7 @@ jobs:
           [ -z "${{ secrets.YDB_ENDPOINT }}" ] && MISSING="${MISSING}YDB_ENDPOINT "
           [ -z "${{ secrets.YDB_DATABASE }}" ] && MISSING="${MISSING}YDB_DATABASE "
           [ -z "${{ secrets.AUTH_TOKEN }}" ] && MISSING="${MISSING}AUTH_TOKEN "
+          [ -z "${{ secrets.YC_SA_ID }}" ] && MISSING="${MISSING}YC_SA_ID "
           if [ -z "${{ secrets.YC_SA_JSON_CREDENTIALS }}" ]; then
             echo "has_creds=false" >> $GITHUB_OUTPUT
             echo "::warning::Секреты не настроены. Добавьте в Settings → Secrets and variables → Actions: $MISSING. См. docs/DEPLOY_YANDEX.md"
@@ -42,6 +43,7 @@ jobs:
           bucket: ${{ secrets.YC_BUCKET }}
           folder-id: ${{ secrets.YC_FOLDER_ID }}
           function-name: ${{ secrets.YC_FUNCTION_NAME || 'gymtracker-api' }}
+          service-account: ${{ secrets.YC_SA_ID }}
           runtime: python312
           entrypoint: index.handler
           memory: 512Mb

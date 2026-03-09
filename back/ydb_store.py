@@ -333,17 +333,19 @@ def save_set(data: Dict) -> Dict:
     _, is_low = calculate_e1rm(total_wt, reps)
     if data.get('is_low_confidence') is not None:
         is_low = bool(data.get('is_low_confidence'))
-    # YDB SDK не сопоставляет None с Double?/Uint32? — используем TypedValue
+    # YDB SDK: Python int -> Int64, нужен явный Uint32; None для Optional — TypedValue
     rpe_param = (ydb.TypedValue(None, ydb.OptionalType(ydb.PrimitiveType.Double))
                  if rpe_val is None else float(rpe_val))
     rir_param = (ydb.TypedValue(None, ydb.OptionalType(ydb.PrimitiveType.Uint32))
                  if rir_val is None else int(rir_val))
+    reps_u32 = ydb.TypedValue(max(0, int(reps)), ydb.PrimitiveType.Uint32)
+    ord_u32 = ydb.TypedValue(max(0, int(ord_val)), ydb.PrimitiveType.Uint32)
     try:
         params = {
             "$id": str(log_id), "$date_val": str(now), "$ex_id": str(ex_id), "$ex_name": str(ex_name),
-            "$input_wt": float(input_wt), "$total_wt": float(total_wt), "$reps": int(reps), "$rest": float(rest),
+            "$input_wt": float(input_wt), "$total_wt": float(total_wt), "$reps": reps_u32, "$rest": float(rest),
             "$set_group": str(set_group), "$session_id": str(session_id_val), "$note": str(note),
-            "$ord_val": int(ord_val), "$set_type": str(set_type or "working"),
+            "$ord_val": ord_u32, "$set_type": str(set_type or "working"),
             "$rpe": rpe_param, "$rir": rir_param, "$is_low": bool(is_low),
         }
         pool.execute_with_retries("""
@@ -392,7 +394,7 @@ def update_set(data: Dict) -> Dict:
             DECLARE $rest AS Double;
             UPDATE log SET total_weight = $total_wt, reps = $reps, rest = $rest
             WHERE id = $row_id;
-        """, {"$row_id": row_id, "$total_wt": total_wt, "$reps": reps, "$rest": rest})
+        """, {"$row_id": row_id, "$total_wt": total_wt, "$reps": ydb.TypedValue(max(0, int(reps)), ydb.PrimitiveType.Uint32), "$rest": rest})
         return {"status": "success"}
     except Exception as e:
         logger.error(f"update_set: {e}", exc_info=True)
@@ -513,7 +515,7 @@ def finish_session(session_id: str, srpe: float = 0, body_weight: float = 0) -> 
         if start_ts is None:
             return False
         start_sec = int(start_ts.timestamp()) if hasattr(start_ts, 'timestamp') else int(start_ts) // 1_000_000
-        duration_sec = int(now.timestamp()) - start_sec
+        duration_sec = max(0, int(now.timestamp()) - start_sec)
         pool.execute_with_retries("""
             DECLARE $session_id AS Utf8;
             DECLARE $duration_sec AS Int32;
@@ -521,7 +523,7 @@ def finish_session(session_id: str, srpe: float = 0, body_weight: float = 0) -> 
             DECLARE $body_weight AS Double;
             UPDATE sessions SET end_ts = CurrentUtcDatetime(), duration_sec = $duration_sec, srpe = $srpe, body_weight = $body_weight
             WHERE id = $session_id;
-        """, {"$session_id": session_id, "$duration_sec": duration_sec, "$srpe": _to_float(srpe), "$body_weight": _to_float(body_weight)})
+        """, {"$session_id": session_id, "$duration_sec": ydb.TypedValue(duration_sec, ydb.PrimitiveType.Int32), "$srpe": _to_float(srpe), "$body_weight": _to_float(body_weight)})
         return True
     except Exception as e:
         logger.error(f"finish_session: {e}", exc_info=True)

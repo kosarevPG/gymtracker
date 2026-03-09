@@ -6,7 +6,7 @@ export const PENDING_QUEUE_KEY = 'gym_pending_queue';
 export const EXERCISES_CACHE_KEY = 'gym_exercises_cache';
 
 // Типы операций
-export type OperationType = 'saveSet' | 'updateSet' | 'createExercise' | 'updateExercise';
+export type OperationType = 'saveSet' | 'updateSet' | 'deleteSet' | 'createExercise' | 'updateExercise';
 
 export interface PendingOperation {
   id: string;
@@ -129,6 +129,7 @@ async function executeOperation(op: PendingOperation): Promise<{ success: boolea
   const endpoints: Record<OperationType, string> = {
     saveSet: 'save_set',
     updateSet: 'update_set',
+    deleteSet: 'delete_set',
     createExercise: 'create_exercise',
     updateExercise: 'update_exercise'
   };

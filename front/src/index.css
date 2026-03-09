@@ -2,11 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Глобальные стили для скроллбара и поведения */
+/* PWA: стабильный viewport и безопасные зоны */
+html {
+    min-height: -webkit-fill-available;
+}
 body {
     background-color: #09090b;
     color: #fafafa;
     overflow-x: hidden;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
 /* Скрытие скроллбара для чистого вида (Chrome/Safari/Webkit) */

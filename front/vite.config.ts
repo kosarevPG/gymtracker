@@ -16,9 +16,10 @@ export default defineConfig({
         background_color: '#09090b',
         theme_color: '#09090b',
         icons: [{
-          src: 'https://cdn-icons-png.flaticon.com/512/2964/2964514.png',
+          src: '/gymtracker/icon-512.png',
           sizes: '512x512',
-          type: 'image/png'
+          type: 'image/png',
+          purpose: 'any maskable'
         }]
       },
       workbox: {

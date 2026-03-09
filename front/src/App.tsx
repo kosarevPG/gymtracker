@@ -399,7 +399,19 @@ const SetRow = ({ set, equipmentType, weightType: weightTypeFromRef, baseWeight,
   );
 };
 
-const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompleteSet, onToggleEdit, onNoteChange, onAddSuperset, onEditMetadata }: any) => {
+interface WorkoutCardProps {
+  exerciseData: ExerciseSessionData;
+  onAddSet: () => void;
+  onUpdateSet: (sid: string, field: string, value: string | number) => void;
+  onDeleteSet: (sid: string) => void;
+  onCompleteSet: (sid: string) => void;
+  onToggleEdit: (sid: string) => void;
+  onNoteChange: (val: string) => void;
+  onAddSuperset: () => void;
+  onEditMetadata: () => void;
+}
+
+const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompleteSet, onToggleEdit, onNoteChange, onAddSuperset, onEditMetadata }: WorkoutCardProps) => {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   
   // PR из истории
@@ -431,9 +443,9 @@ const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompl
   
   // Максимальный вес в текущей сессии (effective для PR)
   const sessionMax = useMemo(() => {
-    const completedSets = exerciseData.sets.filter((s: any) => s.completed && (s.weight || s.effectiveWeight));
+    const completedSets = exerciseData.sets.filter((s) => s.completed && (s.weight || s.effectiveWeight));
     if (!completedSets.length) return 0;
-    return Math.max(...completedSets.map((s: any) => s.effectiveWeight ?? (parseFloat(s.weight) || 0)));
+    return Math.max(...completedSets.map((s) => s.effectiveWeight ?? (parseFloat(s.weight) || 0)));
   }, [exerciseData.sets]);
   
   // Проверяем побит ли PR в текущей сессии
@@ -469,7 +481,7 @@ const WorkoutCard = ({ exerciseData, onAddSet, onUpdateSet, onDeleteSet, onCompl
         <div />
       </div>
       <div className="space-y-1">
-        {exerciseData.sets.map((set: any) => (
+        {exerciseData.sets.map((set: WorkoutSet) => (
           <SetRow key={set.id} set={set} equipmentType={exerciseData.exercise.equipmentType} weightType={exerciseData.exercise.weightType} baseWeight={exerciseData.exercise.baseWeight} weightMultiplier={exerciseData.exercise.weightMultiplier} bodyWeightFactor={exerciseData.exercise.bodyWeightFactor} onUpdate={onUpdateSet} onDelete={onDeleteSet} onComplete={onCompleteSet} onToggleEdit={onToggleEdit} />
         ))}
       </div>
@@ -812,6 +824,9 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
             if (!data) return <div key={exId} className="h-40 bg-zinc-900 rounded-2xl animate-pulse" />;
             return <WorkoutCard key={exId} exerciseData={data} onAddSet={() => handleAddSet(exId)} onUpdateSet={(sid: string, f: string, v: string | number) => handleUpdateSet(exId, sid, f, v)} onDeleteSet={(sid: string) => handleDeleteSet(exId, sid)} onCompleteSet={(sid: string) => handleCompleteSet(exId, sid)} onToggleEdit={(sid: string) => handleToggleEdit(exId, sid)} onNoteChange={(val: string) => setSessionData(p => ({...p, [exId]: {...p[exId], note: val}}))} onAddSuperset={() => setIsAddModalOpen(true)} onEditMetadata={() => setExerciseToEdit(data.exercise)} />;
         })}
+        <Button variant="secondary" onClick={() => setIsAddModalOpen(true)} className="w-full bg-zinc-900/50 border border-dashed border-zinc-700 text-zinc-400 hover:text-blue-500 mt-4 min-h-[48px]">
+          <Plus className="w-5 h-5 mr-2" /> Добавить упражнение
+        </Button>
       </div>
       <StickyBottomBar>
         <Button variant="primary" onClick={handleFinishClick} className="w-full min-h-[48px] text-lg font-semibold shadow-xl shadow-blue-900/20">Завершить тренировку</Button>
@@ -826,7 +841,7 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
           </div>
         </div>
       </Modal>
-      <Modal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setSupersetSearchQuery(''); }} title="Добавить в суперсет">
+      <Modal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setSupersetSearchQuery(''); }} title="Добавить упражнение">
         <div className="space-y-3">
           <Input 
             placeholder="Поиск упражнения..." 

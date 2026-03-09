@@ -8,6 +8,8 @@ export function useWorkoutHistory() {
   const { data: history = [], isLoading: loading } = useQuery({
     queryKey: GLOBAL_HISTORY_QUERY_KEY,
     queryFn: () => api.getGlobalHistory(),
+    staleTime: 30_000, // 30 сек — не перезапрашивать при переключении экранов
+    retry: 2,
   });
   const refreshHistory = () => queryClient.invalidateQueries({ queryKey: GLOBAL_HISTORY_QUERY_KEY });
   return { history, loading, refreshHistory };

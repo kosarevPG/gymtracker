@@ -79,7 +79,7 @@ export const api = {
     return { status: 'queued', pending_id: addToQueue('updateSet', data), offline: true };
   },
 
-  deleteSet: async (rowNumber: string): Promise<{ status?: string } | null> => {
+  deleteSet: async (rowNumber: string): Promise<{ status?: string; pending_id?: string; offline?: boolean } | null> => {
     try {
       const res = await fetch(buildApiUrl('delete_set'), {
         method: 'POST',
@@ -89,7 +89,7 @@ export const api = {
       if (res.status === 403) { handle403(); return null; }
       if (res.ok) return await res.json();
     } catch (e) { console.log('deleteSet failed', e); }
-    return null;
+    return { status: 'queued', pending_id: addToQueue('deleteSet', { row_number: rowNumber }), offline: true };
   },
 
   createExercise: async (name: string, group: string) => await api.request('create_exercise', { method: 'POST', body: JSON.stringify({ name, group }) }),

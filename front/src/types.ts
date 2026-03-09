@@ -49,11 +49,19 @@ export interface HistoryItem {
   setGroupId?: string | null;
 }
 
+/** Группа в истории: по дате, может быть sets или exercises (суперсет) */
+export interface HistoryGroup {
+  date: string;
+  sets?: { weight: number; reps: number; rest?: number; set_type?: string }[];
+  exercises?: { exerciseId?: string; exerciseName?: string; sets?: { weight: number; reps: number }[] }[];
+  weight?: number;
+}
+
 export interface ExerciseSessionData {
   exercise: Exercise;
   note: string;
   sets: WorkoutSet[];
-  history: HistoryItem[];
+  history: HistoryGroup[];
 }
 
 export interface GlobalWorkoutSession {

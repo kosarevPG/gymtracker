@@ -333,13 +333,18 @@ def save_set(data: Dict) -> Dict:
     _, is_low = calculate_e1rm(total_wt, reps)
     if data.get('is_low_confidence') is not None:
         is_low = bool(data.get('is_low_confidence'))
+    # YDB SDK не сопоставляет None с Double?/Uint32? — используем TypedValue
+    rpe_param = (ydb.TypedValue(None, ydb.OptionalType(ydb.PrimitiveType.Double))
+                 if rpe_val is None else float(rpe_val))
+    rir_param = (ydb.TypedValue(None, ydb.OptionalType(ydb.PrimitiveType.Uint32))
+                 if rir_val is None else int(rir_val))
     try:
         params = {
-            "$id": log_id, "$date_val": now, "$ex_id": ex_id, "$ex_name": ex_name,
-            "$input_wt": input_wt, "$total_wt": total_wt, "$reps": reps, "$rest": rest,
-            "$set_group": set_group, "$session_id": session_id_val, "$note": note,
-            "$ord_val": ord_val, "$set_type": set_type or "working",
-            "$rpe": rpe_val, "$rir": rir_val, "$is_low": is_low,
+            "$id": str(log_id), "$date_val": str(now), "$ex_id": str(ex_id), "$ex_name": str(ex_name),
+            "$input_wt": float(input_wt), "$total_wt": float(total_wt), "$reps": int(reps), "$rest": float(rest),
+            "$set_group": str(set_group), "$session_id": str(session_id_val), "$note": str(note),
+            "$ord_val": int(ord_val), "$set_type": str(set_type or "working"),
+            "$rpe": rpe_param, "$rir": rir_param, "$is_low": bool(is_low),
         }
         pool.execute_with_retries("""
             DECLARE $id AS Utf8;

@@ -529,6 +529,7 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
   );
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addModalAnchorExId, setAddModalAnchorExId] = useState<string | null>(null); // null = "Добавить упражнение", exId = "Сет" с этим упражнением
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
   const [finishSrpe, setFinishSrpe] = useState('');
   const [finishBodyWeight, setFinishBodyWeight] = useState('');
@@ -608,7 +609,7 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
         } else {
             initialSets = [createEmptySet()];
         }
-        return { ...prev, [exId]: { exercise: allExercises.find((e: Exercise) => e.id === exId)!, note: note || '', history, sets: initialSets } };
+        return { ...prev, [exId]: { exercise: allExercises.find((e: Exercise) => e.id === exId)!, note: note || '', history, sets: initialSets, setGroupId: exId } };
     });
   };
 
@@ -645,7 +646,8 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
     
     haptic('medium');
     const order = incrementOrder();
-    setSessionData(prev => ({ ...prev, [exId]: { ...prev[exId], sets: prev[exId].sets.map(s => s.id === setId ? { ...s, completed: true, order, setGroupId: localGroupId, effectiveWeight } : s) } }));
+    const exSetGroupId = sessionData[exId].setGroupId || exId;
+    setSessionData(prev => ({ ...prev, [exId]: { ...prev[exId], sets: prev[exId].sets.map(s => s.id === setId ? { ...s, completed: true, order, setGroupId: exSetGroupId, effectiveWeight } : s) } }));
     timer.resetAndStart();
 
     const result = await api.saveSet({
@@ -657,7 +659,7 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
         reps: parseInt(set.reps),
         rest: parseFloat(set.rest) || 0,
         note: sessionData[exId].note,
-        set_group_id: localGroupId,
+        set_group_id: exSetGroupId,
         session_id: localGroupId,
         set_type: set.setType || 'working',
         rpe: set.rpe != null ? Number(set.rpe) : undefined,
@@ -822,9 +824,9 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
         {activeExercises.map(exId => {
             const data = sessionData[exId];
             if (!data) return <div key={exId} className="h-40 bg-zinc-900 rounded-2xl animate-pulse" />;
-            return <WorkoutCard key={exId} exerciseData={data} onAddSet={() => handleAddSet(exId)} onUpdateSet={(sid: string, f: string, v: string | number) => handleUpdateSet(exId, sid, f, v)} onDeleteSet={(sid: string) => handleDeleteSet(exId, sid)} onCompleteSet={(sid: string) => handleCompleteSet(exId, sid)} onToggleEdit={(sid: string) => handleToggleEdit(exId, sid)} onNoteChange={(val: string) => setSessionData(p => ({...p, [exId]: {...p[exId], note: val}}))} onAddSuperset={() => setIsAddModalOpen(true)} onEditMetadata={() => setExerciseToEdit(data.exercise)} />;
+            return <WorkoutCard key={exId} exerciseData={data} onAddSet={() => handleAddSet(exId)} onUpdateSet={(sid: string, f: string, v: string | number) => handleUpdateSet(exId, sid, f, v)} onDeleteSet={(sid: string) => handleDeleteSet(exId, sid)} onCompleteSet={(sid: string) => handleCompleteSet(exId, sid)} onToggleEdit={(sid: string) => handleToggleEdit(exId, sid)} onNoteChange={(val: string) => setSessionData(p => ({...p, [exId]: {...p[exId], note: val}}))} onAddSuperset={() => { setAddModalAnchorExId(exId); setIsAddModalOpen(true); }} onEditMetadata={() => setExerciseToEdit(data.exercise)} />;
         })}
-        <Button variant="secondary" onClick={() => setIsAddModalOpen(true)} className="w-full bg-zinc-900/50 border border-dashed border-zinc-700 text-zinc-400 hover:text-blue-500 mt-4 min-h-[48px]">
+        <Button variant="secondary" onClick={() => { setAddModalAnchorExId(null); setIsAddModalOpen(true); }} className="w-full bg-zinc-900/50 border border-dashed border-zinc-700 text-zinc-400 hover:text-blue-500 mt-4 min-h-[48px]">
           <Plus className="w-5 h-5 mr-2" /> Добавить упражнение
         </Button>
       </div>
@@ -841,7 +843,7 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
           </div>
         </div>
       </Modal>
-      <Modal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setSupersetSearchQuery(''); }} title="Добавить упражнение">
+      <Modal isOpen={isAddModalOpen} onClose={() => { setIsAddModalOpen(false); setAddModalAnchorExId(null); setSupersetSearchQuery(''); }} title={addModalAnchorExId ? "Добавить в сет" : "Добавить упражнение"}>
         <div className="space-y-3">
           <Input 
             placeholder="Поиск упражнения..." 
@@ -861,9 +863,20 @@ const WorkoutScreen = ({ initialExercise, allExercises, onBack, incrementOrder, 
                   key={ex.id} 
                   onClick={() => { 
                     if (!activeExercises.includes(ex.id)) {
+                      const sharedGroupId = addModalAnchorExId
+                        ? (sessionData[addModalAnchorExId]?.setGroupId ?? addModalAnchorExId)
+                        : ex.id;
                       setActiveExercises([...activeExercises, ex.id]);
+                      setSessionData(prev => ({
+                        ...prev,
+                        [ex.id]: {
+                          ...(prev[ex.id] || { exercise: ex, note: '', sets: [createEmptySet()], history: [] }),
+                          setGroupId: sharedGroupId
+                        }
+                      }));
                     }
                     setIsAddModalOpen(false);
+                    setAddModalAnchorExId(null);
                     setSupersetSearchQuery('');
                   }} 
                   className="flex items-center p-3 bg-zinc-800/50 rounded-xl border border-zinc-800 cursor-pointer hover:bg-zinc-800 transition-colors"

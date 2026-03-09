@@ -62,6 +62,8 @@ export interface ExerciseSessionData {
   note: string;
   sets: WorkoutSet[];
   history: HistoryGroup[];
+  /** Группа для суперсетов. Одинаковый = суперсет, уникальный = отдельное упражнение. */
+  setGroupId?: string;
 }
 
 export interface GlobalWorkoutSession {

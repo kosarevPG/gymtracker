@@ -120,10 +120,31 @@ def update_exercise(ex_id: str, data: Dict) -> bool:
         updates.append('image_url = $image_url')
         params["$image_url"] = str(data.get("imageUrl", ""))
         decl.append("DECLARE $image_url AS Utf8;")
+    if 'imageUrl2' in data:
+        updates.append('image_url2 = $image_url2')
+        params["$image_url2"] = str(data.get("imageUrl2", ""))
+        decl.append("DECLARE $image_url2 AS Utf8;")
     if 'secondaryMuscles' in data:
         updates.append('secondary_muscles = $secondary_muscles')
         params["$secondary_muscles"] = str(data.get("secondaryMuscles", ""))
         decl.append("DECLARE $secondary_muscles AS Utf8;")
+    if 'equipmentType' in data:
+        updates.append('equipment_type = $equipment_type')
+        params["$equipment_type"] = str(data.get("equipmentType", "barbell"))
+        decl.append("DECLARE $equipment_type AS Utf8;")
+    if 'exerciseType' in data:
+        updates.append('exercise_type = $exercise_type')
+        params["$exercise_type"] = str(data.get("exerciseType", "compound"))
+        decl.append("DECLARE $exercise_type AS Utf8;")
+    if 'weightType' in data:
+        updates.append('weight_type = $weight_type')
+        params["$weight_type"] = str(data.get("weightType", "Barbell"))
+        decl.append("DECLARE $weight_type AS Utf8;")
+    if 'baseWeight' in data:
+        bw_val = to_float(data.get('baseWeight'), 0.0)
+        updates.append('base_weight = $base_weight')
+        params["$base_weight"] = bw_val
+        decl.append("DECLARE $base_weight AS Double;")
     if 'weightMultiplier' in data:
         mult_val = to_float(data.get('weightMultiplier'), 1.0)
         updates.append('multiplier = $multiplier')

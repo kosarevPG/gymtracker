@@ -21,6 +21,8 @@ export const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }:
     const [description, setDescription] = useState('');
     const [image, setImage] = useState('');
     const [image2, setImage2] = useState('');
+    const [equipmentType, setEquipmentType] = useState<string>('barbell');
+    const [exerciseType, setExerciseType] = useState<string>('compound');
     const [weightType, setWeightType] = useState<string>('Dumbbell');
     const [baseWeight, setBaseWeight] = useState(0);
     const [weightMultiplier, setWeightMultiplier] = useState(1);
@@ -33,11 +35,11 @@ export const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }:
             const draft = {
                 exerciseId: exercise.id,
                 name, group, secondaryMuscles, description, image, image2,
-                weightType, baseWeight, weightMultiplier, bodyWeightFactor
+                equipmentType, exerciseType, weightType, baseWeight, weightMultiplier, bodyWeightFactor
             };
             localStorage.setItem(EDIT_EXERCISE_DRAFT_KEY, JSON.stringify(draft));
         }
-    }, [name, group, secondaryMuscles, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor, exercise, isOpen]);
+    }, [name, group, secondaryMuscles, description, image, image2, equipmentType, exerciseType, weightType, baseWeight, weightMultiplier, bodyWeightFactor, exercise, isOpen]);
 
     useEffect(() => {
         if(exercise && isOpen) {
@@ -52,6 +54,8 @@ export const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }:
                         setDescription(draft.description || exercise.description || '');
                         setImage(draft.image || exercise.imageUrl || '');
                         setImage2(draft.image2 || exercise.imageUrl2 || '');
+                        setEquipmentType(draft.equipmentType ?? exercise.equipmentType ?? 'barbell');
+                        setExerciseType(draft.exerciseType ?? exercise.exerciseType ?? 'compound');
                         setWeightType(draft.weightType ?? exercise.weightType ?? 'Dumbbell');
                         setBaseWeight(draft.baseWeight ?? exercise.baseWeight ?? 0);
                         setWeightMultiplier(draft.weightMultiplier ?? exercise.weightMultiplier ?? 1);
@@ -68,6 +72,8 @@ export const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }:
             setDescription(exercise.description || '');
             setImage(exercise.imageUrl || '');
             setImage2(exercise.imageUrl2 || '');
+            setEquipmentType(exercise.equipmentType || 'barbell');
+            setExerciseType(exercise.exerciseType || 'compound');
             setWeightType(exercise.weightType || 'Dumbbell');
             setBaseWeight(exercise.baseWeight ?? 0);
             setWeightMultiplier(exercise.weightMultiplier ?? 1);
@@ -100,6 +106,8 @@ export const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }:
                             setDescription(draft.description || exercise.description || '');
                             setImage(draft.image || exercise.imageUrl || '');
                             setImage2(draft.image2 || exercise.imageUrl2 || '');
+                            setEquipmentType(draft.equipmentType ?? exercise.equipmentType ?? 'barbell');
+                            setExerciseType(draft.exerciseType ?? exercise.exerciseType ?? 'compound');
                             setWeightType(draft.weightType ?? exercise.weightType ?? 'Dumbbell');
                             setBaseWeight(draft.baseWeight ?? exercise.baseWeight ?? 0);
                             setWeightMultiplier(draft.weightMultiplier ?? exercise.weightMultiplier ?? 1);
@@ -114,7 +122,7 @@ export const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }:
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-    }, [isOpen, exercise, name, group, secondaryMuscles, description, image, image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor]);
+    }, [isOpen, exercise, name, group, secondaryMuscles, description, image, image2, equipmentType, exerciseType, weightType, baseWeight, weightMultiplier, bodyWeightFactor]);
 
     const [uploadingImage1, setUploadingImage1] = useState(false);
     const [uploadingImage2, setUploadingImage2] = useState(false);
@@ -177,10 +185,32 @@ export const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }:
                 <div><label className="text-sm text-zinc-400 mb-1 block">Вспомогательные мышцы</label><Input value={secondaryMuscles} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSecondaryMuscles(e.target.value)} placeholder="Например: Трицепс, Плечи" /></div>
 
                 <div className="pt-4 border-t border-zinc-800">
-                    <label className="text-sm text-zinc-400 mb-2 block">Расчёт нагрузки</label>
+                    <label className="text-sm text-zinc-400 mb-2 block">Параметры</label>
                     <div className="space-y-3">
                         <div>
-                            <span className="text-xs text-zinc-500 block mb-1">Тип</span>
+                            <span className="text-xs text-zinc-500 block mb-1">Оборудование</span>
+                            <div className="flex flex-wrap gap-1.5">
+                                {(['barbell', 'dumbbell', 'machine', 'cable', 'bodyweight', 'other'] as const).map(t => (
+                                    <button key={t} type="button" onClick={() => setEquipmentType(t)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${equipmentType === t ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                                        {{barbell: 'Штанга', dumbbell: 'Гантели', machine: 'Тренажёр', cable: 'Блок', bodyweight: 'Своё тело', other: 'Другое'}[t]}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-xs text-zinc-500 block mb-1">Тип упражнения</span>
+                            <div className="flex flex-wrap gap-1.5">
+                                {(['compound', 'isolation', 'cardio'] as const).map(t => (
+                                    <button key={t} type="button" onClick={() => setExerciseType(t)}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${exerciseType === t ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                                        {{compound: 'Базовое', isolation: 'Изолирующее', cardio: 'Кардио'}[t]}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                        <div>
+                            <span className="text-xs text-zinc-500 block mb-1">Расчёт веса</span>
                             <select value={weightType} onChange={e => setWeightType(e.target.value)} className="w-full h-10 bg-zinc-800 rounded-xl px-3 text-zinc-100 text-sm focus:ring-1 focus:ring-blue-500 outline-none">
                                 {WEIGHT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                             </select>
@@ -228,7 +258,7 @@ export const EditExerciseModal = ({ isOpen, onClose, exercise, groups, onSave }:
                     onClick={async () => {
                         if (!exercise) return;
                         localStorage.removeItem(EDIT_EXERCISE_DRAFT_KEY);
-                        await onSave(exercise.id, { name, muscleGroup: group, secondaryMuscles, description, imageUrl: image, imageUrl2: image2, weightType, baseWeight, weightMultiplier, bodyWeightFactor });
+                        await onSave(exercise.id, { name, muscleGroup: group, secondaryMuscles, description, imageUrl: image, imageUrl2: image2, equipmentType, exerciseType, weightType, baseWeight, weightMultiplier, bodyWeightFactor });
                         onClose();
                     }}
                     className="w-full h-12"

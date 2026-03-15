@@ -18,6 +18,8 @@ interface SetsTableProps {
   className?: string;
 }
 
+const GRID_COLS = 'grid-cols-[2rem_1fr_1fr_1fr_2rem]';
+
 export function SetsTable({ sets, renderRow, className = '' }: SetsTableProps) {
   if (!sets || sets.length === 0) {
     return <div className="text-xs text-zinc-500 py-2">Нет подходов</div>;
@@ -31,11 +33,12 @@ export function SetsTable({ sets, renderRow, className = '' }: SetsTableProps) {
   return (
     <div className={className}>
       {/* Header */}
-      <div className="grid grid-cols-[2rem_1fr_1fr_1fr] text-[11px] uppercase tracking-wider text-zinc-500 font-semibold px-3 pb-1.5 border-b border-zinc-800/60">
+      <div className={`grid ${GRID_COLS} text-[11px] uppercase tracking-wider text-zinc-500 font-semibold px-3 pb-1.5 border-b border-zinc-800/60`}>
         <span>#</span>
         <span className="text-center">Вес</span>
         <span className="text-center">Повт.</span>
         <span className="text-right">Отдых</span>
+        <span />
       </div>
 
       {/* Rows */}
@@ -47,7 +50,7 @@ export function SetsTable({ sets, renderRow, className = '' }: SetsTableProps) {
         return (
           <div
             key={i}
-            className={`grid grid-cols-[2rem_1fr_1fr_1fr] items-center px-3 py-1.5 text-sm ${
+            className={`grid ${GRID_COLS} items-center px-3 py-1.5 text-sm ${
               i % 2 === 1 ? 'bg-zinc-800/20' : ''
             } ${isWarmup ? 'text-zinc-500' : 'text-zinc-300'}`}
           >
@@ -69,6 +72,9 @@ export function SetsTable({ sets, renderRow, className = '' }: SetsTableProps) {
             <span className="text-right tabular-nums text-zinc-500 text-xs">
               {set.rest > 0 ? `${set.rest} м` : '—'}
             </span>
+
+            {/* Empty action column */}
+            <span />
           </div>
         );
       })}

@@ -80,12 +80,12 @@ export const HistoryExerciseGroup = memo(function HistoryExerciseGroup({
           sets={normalizedSets}
           renderRow={(set, j) => {
             const s = group.sets[j];
-            const hasId = !!s.id;
-            return hasId ? (
+            return (
               <HistorySetRow
                 key={s.id || j}
+                index={j}
                 set={{
-                  id: s.id!,
+                  id: s.id,
                   weight: set.weight,
                   reps: set.reps,
                   rest: set.rest,
@@ -94,10 +94,9 @@ export const HistoryExerciseGroup = memo(function HistoryExerciseGroup({
                   order: s.order,
                   set_type: s.set_type,
                   rpe: s.rpe,
-                  rir: s.rir,
                   updated_at: s.updated_at,
                 }}
-                className={`py-1.5 px-3 ${j % 2 === 1 ? 'bg-zinc-800/20' : ''}`}
+                className={j % 2 === 1 ? 'bg-zinc-800/20' : ''}
                 onSave={async (updates) => {
                   const res = await onUpdateSet({
                     row_number: s.id!,
@@ -116,23 +115,6 @@ export const HistoryExerciseGroup = memo(function HistoryExerciseGroup({
                 }}
                 onDelete={s.id ? () => onDeleteSet(s.id!) : undefined}
               />
-            ) : (
-              <div
-                key={j}
-                className={`grid grid-cols-[2rem_1fr_1fr_1fr] items-center px-3 py-1.5 text-sm ${
-                  j % 2 === 1 ? 'bg-zinc-800/20' : ''
-                } text-zinc-300`}
-              >
-                <span className="tabular-nums text-zinc-500 text-xs">{j + 1}</span>
-                <span className="text-center">
-                  <span className="tabular-nums font-bold text-zinc-100">{set.weight}</span>
-                  <span className="text-zinc-500 text-xs ml-1">кг</span>
-                </span>
-                <span className="text-center tabular-nums font-medium">{set.reps}</span>
-                <span className="text-right tabular-nums text-zinc-500 text-xs">
-                  {set.rest > 0 ? `${set.rest} м` : '—'}
-                </span>
-              </div>
             );
           }}
         />

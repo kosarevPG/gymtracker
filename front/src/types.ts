@@ -9,6 +9,7 @@ export interface Exercise {
   imageUrl?: string;
   imageUrl2?: string;
   equipmentType?: string;
+  exerciseType?: string;
   weightType?: string;
   baseWeight?: number;
   weightMultiplier?: number;

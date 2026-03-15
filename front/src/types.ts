@@ -71,7 +71,7 @@ export interface GlobalWorkoutSession {
   date: string;
   muscleGroups: string[];
   duration: string;
-  exercises: { name: string; sets: any[]; supersetId?: string }[];
+  exercises: { name: string; sets: { weight: number; reps: number; rest?: number; set_type?: string; rpe?: number; rir?: number }[]; supersetId?: string }[];
 }
 
 export interface AnalyticsDataV4 {

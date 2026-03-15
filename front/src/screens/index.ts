@@ -8,3 +8,5 @@ export { AnalyticsScreen } from './AnalyticsScreen';
 export type { AnalyticsScreenProps } from './AnalyticsScreen';
 export { SettingsScreen } from './SettingsScreen';
 export type { SettingsScreenProps } from './SettingsScreen';
+export { WorkoutScreen } from './WorkoutScreen';
+export type { WorkoutScreenProps } from './WorkoutScreen';

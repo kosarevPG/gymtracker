@@ -11,7 +11,7 @@ export type OperationType = 'saveSet' | 'updateSet' | 'deleteSet' | 'createExerc
 export interface PendingOperation {
   id: string;
   type: OperationType;
-  data: any;
+  data: Record<string, unknown>;
   createdAt: number;
   retryCount: number;
 }
@@ -42,7 +42,7 @@ function saveQueue(queue: PendingOperation[]): void {
   notifyListeners();
 }
 
-export function addToQueue(type: OperationType, data: any): string {
+export function addToQueue(type: OperationType, data: Record<string, unknown>): string {
   const queue = getQueue();
   const id = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   queue.push({
@@ -72,7 +72,7 @@ export function getPendingCount(): number {
 
 // --- Кэш упражнений ---
 
-export function cacheExercises(data: { groups: string[]; exercises: any[] }): void {
+export function cacheExercises(data: { groups: string[]; exercises: Record<string, unknown>[] }): void {
   try {
     localStorage.setItem(EXERCISES_CACHE_KEY, JSON.stringify({
       data,
@@ -83,7 +83,7 @@ export function cacheExercises(data: { groups: string[]; exercises: any[] }): vo
   }
 }
 
-export function getCachedExercises(): { groups: string[]; exercises: any[] } | null {
+export function getCachedExercises(): { groups: string[]; exercises: Record<string, unknown>[] } | null {
   try {
     const raw = localStorage.getItem(EXERCISES_CACHE_KEY);
     if (!raw) return null;
@@ -125,7 +125,7 @@ export function getStatus(): SyncStatus {
 
 // --- Синхронизация ---
 
-async function executeOperation(op: PendingOperation): Promise<{ success: boolean; result?: any }> {
+async function executeOperation(op: PendingOperation): Promise<{ success: boolean; result?: Record<string, unknown> }> {
   const endpoints: Record<OperationType, string> = {
     saveSet: 'save_set',
     updateSet: 'update_set',
@@ -181,7 +181,7 @@ export async function syncAll(): Promise<{ synced: number; failed: number }> {
       
       // Уведомляем о успешной синхронизации saveSet (для обновления row_number)
       if (op.type === 'saveSet' && result?.row_number && onSaveSetSynced) {
-        onSaveSetSynced(op.id, op.data, result.row_number);
+        onSaveSetSynced(op.id, op.data, result.row_number as number);
       }
     } else {
       // Увеличиваем счётчик попыток
@@ -202,9 +202,9 @@ export async function syncAll(): Promise<{ synced: number; failed: number }> {
 }
 
 // Колбэк для обновления row_number после синхронизации saveSet
-let onSaveSetSynced: ((pendingId: string, data: any, rowNumber: number) => void) | null = null;
+let onSaveSetSynced: ((pendingId: string, data: Record<string, unknown>, rowNumber: number) => void) | null = null;
 
-export function setOnSaveSetSynced(callback: (pendingId: string, data: any, rowNumber: number) => void): void {
+export function setOnSaveSetSynced(callback: (pendingId: string, data: Record<string, unknown>, rowNumber: number) => void): void {
   onSaveSetSynced = callback;
 }
 

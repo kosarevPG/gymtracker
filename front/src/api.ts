@@ -1,5 +1,5 @@
 import { AUTH_TOKEN_KEY, buildApiUrl } from './constants';
-import { cacheExercises, getCachedExercises, addToQueue } from './offlineSync';
+import { cacheExercises, getCachedExercises, addToQueue, type OperationType } from './offlineSync';
 import type { Exercise } from './types';
 
 export const getToken = () => localStorage.getItem(AUTH_TOKEN_KEY) || '';
@@ -8,6 +8,37 @@ export const getToken = () => localStorage.getItem(AUTH_TOKEN_KEY) || '';
 export function handle403() {
   localStorage.removeItem(AUTH_TOKEN_KEY);
   window.dispatchEvent(new CustomEvent('gym-unauthorized'));
+}
+
+/** Общий хелпер для мутаций: fetch + 403 + 409 + offline fallback */
+async function mutationRequest<T = Record<string, unknown>>(
+  endpoint: string,
+  data: Record<string, unknown>,
+  options?: { offlineType?: OperationType; addTimestamp?: boolean }
+): Promise<T | null> {
+  try {
+    const payload = { ...data };
+    if (options?.addTimestamp && !payload.updated_at) {
+      payload.updated_at = new Date().toISOString();
+    }
+    const res = await fetch(buildApiUrl(endpoint), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
+      body: JSON.stringify(payload)
+    });
+    if (res.status === 403) { handle403(); return null; }
+    if (res.status === 409) {
+      const err = await res.json().catch(() => ({}));
+      return { status: 'conflict', code: 'CONFLICT', error: err?.error || 'Конфликт' } as T;
+    }
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.log(`${endpoint} failed`, e);
+  }
+  if (options?.offlineType) {
+    return { status: 'queued', pending_id: addToQueue(options.offlineType, data), offline: true } as T;
+  }
+  return null;
 }
 
 export const api = {
@@ -41,90 +72,24 @@ export const api = {
   confirmBaseline: async (proposalId: string, action: 'CONFIRM' | 'SNOOZE' | 'DECLINE') =>
     await api.request('confirm_baseline', { method: 'POST', body: JSON.stringify({ proposalId, action }) }),
 
-  saveSet: async (data: Record<string, unknown>): Promise<{ status?: string; row_number?: number; updated_at?: string; pending_id?: string; offline?: boolean; code?: string; error?: string } | null> => {
-    try {
-      const payload = { ...data };
-      if (!payload.updated_at) payload.updated_at = new Date().toISOString();
-      const res = await fetch(buildApiUrl('save_set'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-        body: JSON.stringify(payload)
-      });
-      if (res.status === 403) { handle403(); return null; }
-      if (res.status === 409) {
-        const err = await res.json().catch(() => ({}));
-        return { status: 'conflict', code: 'CONFLICT', error: err?.error || 'Конфликт при сохранении' };
-      }
-      if (res.ok) return await res.json();
-    } catch (e) { console.log('saveSet failed', e); }
-    return { status: 'queued', pending_id: addToQueue('saveSet', data), offline: true };
-  },
+  saveSet: (data: Record<string, unknown>) =>
+    mutationRequest<{ status?: string; row_number?: number; updated_at?: string; pending_id?: string; offline?: boolean; code?: string; error?: string }>('save_set', data, { offlineType: 'saveSet', addTimestamp: true }),
 
-  updateSet: async (data: Record<string, unknown>): Promise<{ status?: string; pending_id?: string; offline?: boolean; code?: string; error?: string } | null> => {
-    try {
-      const payload = { ...data };
-      if (!payload.updated_at) payload.updated_at = new Date().toISOString();
-      const res = await fetch(buildApiUrl('update_set'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-        body: JSON.stringify(payload)
-      });
-      if (res.status === 403) { handle403(); return null; }
-      if (res.status === 409) {
-        const err = await res.json().catch(() => ({}));
-        return { status: 'conflict', code: 'CONFLICT', error: err?.error || 'Конфликт при обновлении' };
-      }
-      if (res.ok) return await res.json();
-    } catch (e) { console.log('updateSet failed', e); }
-    return { status: 'queued', pending_id: addToQueue('updateSet', data), offline: true };
-  },
+  updateSet: (data: Record<string, unknown>) =>
+    mutationRequest<{ status?: string; pending_id?: string; offline?: boolean; code?: string; error?: string }>('update_set', data, { offlineType: 'updateSet', addTimestamp: true }),
 
-  deleteSet: async (rowNumber: string): Promise<{ status?: string; pending_id?: string; offline?: boolean } | null> => {
-    try {
-      const res = await fetch(buildApiUrl('delete_set'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-        body: JSON.stringify({ row_number: rowNumber })
-      });
-      if (res.status === 403) { handle403(); return null; }
-      if (res.ok) return await res.json();
-    } catch (e) { console.log('deleteSet failed', e); }
-    return { status: 'queued', pending_id: addToQueue('deleteSet', { row_number: rowNumber }), offline: true };
-  },
+  deleteSet: (rowNumber: string) =>
+    mutationRequest<{ status?: string; pending_id?: string; offline?: boolean }>('delete_set', { row_number: rowNumber }, { offlineType: 'deleteSet' }),
 
   createExercise: async (name: string, group: string) => await api.request('create_exercise', { method: 'POST', body: JSON.stringify({ name, group }) }),
   updateExercise: async (id: string, updates: Partial<Exercise>) => await api.request('update_exercise', { method: 'POST', body: JSON.stringify({ id, updates }) }),
   ping: async () => await api.request('ping'),
 
-  startSession: async (bodyWeight?: number) => {
-    try {
-      const res = await fetch(buildApiUrl('start_session'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-        body: JSON.stringify({ body_weight: bodyWeight ?? 0 })
-      });
-      if (res.status === 403) { handle403(); return null; }
-      if (res.ok) return await res.json();
-    } catch (e) { console.error('startSession failed', e); }
-    return null;
-  },
+  startSession: (bodyWeight?: number) =>
+    mutationRequest('start_session', { body_weight: bodyWeight ?? 0 }),
 
-  finishSession: async (data: { session_id: string; srpe?: number; body_weight?: number }) => {
-    try {
-      const res = await fetch(buildApiUrl('finish_session'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': getToken() },
-        body: JSON.stringify({
-          session_id: data.session_id,
-          srpe: data.srpe ?? 0,
-          body_weight: data.body_weight ?? 0
-        })
-      });
-      if (res.status === 403) { handle403(); return null; }
-      if (res.ok) return await res.json();
-    } catch (e) { console.error('finishSession failed', e); }
-    return null;
-  },
+  finishSession: (data: { session_id: string; srpe?: number; body_weight?: number }) =>
+    mutationRequest('finish_session', { session_id: data.session_id, srpe: data.srpe ?? 0, body_weight: data.body_weight ?? 0 }),
 
   uploadImage: async (file: File) => {
     const formData = new FormData();

@@ -1,6 +1,6 @@
 import { Calendar, Link as LinkIcon } from 'lucide-react';
 import { Modal } from '../ui';
-import { SetDisplayRow } from './SetDisplayRow';
+import { SetsTable } from './SetsTable';
 import { useExerciseHistory } from '../hooks';
 
 export const HistoryListModal = ({ isOpen, onClose, exerciseId, exerciseName }: { isOpen: boolean; onClose: () => void; exerciseId: string | null; exerciseName: string }) => {
@@ -26,14 +26,7 @@ export const HistoryListModal = ({ isOpen, onClose, exerciseId, exerciseName }: 
                       <div className="px-3 pt-2 pb-1 text-sm font-medium text-zinc-300">
                         {ex.exerciseName}
                       </div>
-                      {ex.sets.map((set: any, setIdx: number) => {
-                        const isLastSet = setIdx === ex.sets.length - 1;
-                        const isLastExercise = exIdx === group.exercises.length - 1;
-                        const borderClass = isLastSet && isLastExercise ? '' : 'border-b border-zinc-800/50';
-                        return (
-                          <SetDisplayRow key={setIdx} weight={set.weight} reps={set.reps} rest={set.rest} className={`py-2 px-3 border-l-2 border-l-blue-500 bg-blue-500/5 ${borderClass}`} />
-                        );
-                      })}
+                      <SetsTable sets={ex.sets} />
                     </div>
                   ))}
                 </div>
@@ -47,12 +40,7 @@ export const HistoryListModal = ({ isOpen, onClose, exerciseId, exerciseName }: 
                   <span className="text-sm font-bold text-zinc-400 uppercase tracking-wider">{group.date}</span>
                 </div>
                 <div className="bg-zinc-800/30 border border-zinc-800 rounded-xl overflow-hidden">
-                  {group.sets.map((set: any, setIdx: number) => {
-                    const isLastSet = setIdx === group.sets.length - 1;
-                    return (
-                      <SetDisplayRow key={setIdx} weight={set.weight} reps={set.reps} rest={set.rest} className={`py-2 px-3 ${isLastSet ? '' : 'border-b border-zinc-800/50'}`} />
-                    );
-                  })}
+                  <SetsTable sets={group.sets} />
                 </div>
               </div>
             );

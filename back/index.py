@@ -56,22 +56,10 @@ def json_response(data, status=200):
 # --- API handlers (YDB) ---
 
 try:
-    from ydb_store import (
-        get_all_exercises,
-        get_exercise_history,
-        get_global_history,
-        save_set as ydb_save_set,
-        update_set as ydb_update_set,
-        delete_set as ydb_delete_set,
-        create_exercise as ydb_create_exercise,
-        update_exercise as ydb_update_exercise,
-        start_session as ydb_start_session,
-        finish_session as ydb_finish_session,
-        get_volume_load,
-        get_acwr,
-        get_muscle_volume,
-        export_logs_csv,
-    )
+    from exercises import get_all_exercises, create_exercise as ydb_create_exercise, update_exercise as ydb_update_exercise
+    from sets import save_set as ydb_save_set, update_set as ydb_update_set, delete_set as ydb_delete_set
+    from sessions import start_session as ydb_start_session, finish_session as ydb_finish_session
+    from analytics import get_volume_load, get_acwr, get_muscle_volume, get_exercise_history, get_global_history, export_logs_csv
     HAS_YDB = True
 except ImportError:
     HAS_YDB = False

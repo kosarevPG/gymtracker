@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { Link as LinkIcon } from 'lucide-react';
 import { HistorySetRow } from './HistorySetRow';
-import { SetDisplayRow } from './SetDisplayRow';
+import { SetsTable, type SetsTableSet } from './SetsTable';
 
 export interface HistorySetData {
   id?: string;
@@ -63,25 +63,32 @@ export const HistoryExerciseGroup = memo(function HistoryExerciseGroup({
     if (isSupersetMiddle) borderClass = 'border-l-2 border-l-blue-500 border-b-0 bg-blue-500/5';
   }
 
+  // Normalize sets for SetsTable
+  const normalizedSets: SetsTableSet[] = (group.sets || []).map((s) => ({
+    ...s,
+    weight: typeof s.weight === 'number' ? s.weight : (s.weight ? parseFloat(String(s.weight)) : 0),
+    reps: typeof s.reps === 'number' ? s.reps : (s.reps ? parseInt(String(s.reps)) : 0),
+    rest: typeof s.rest === 'number' ? s.rest : (s.rest ? parseFloat(String(s.rest)) : 0),
+  }));
+
   return (
     <div className={`${paddingClass} ${borderClass} last:border-b-0`}>
       {supersetIndicator}
       <div className="font-medium text-zinc-300 text-sm mb-1">{group.name}</div>
-      {group.sets && Array.isArray(group.sets) && group.sets.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {group.sets.map((s, j) => {
-            const weight = typeof s.weight === 'number' ? s.weight : (s.weight ? parseFloat(String(s.weight)) : 0);
-            const reps = typeof s.reps === 'number' ? s.reps : (s.reps ? parseInt(String(s.reps)) : 0);
-            const rest = typeof s.rest === 'number' ? s.rest : (s.rest ? parseFloat(String(s.rest)) : 0);
+      {normalizedSets.length > 0 ? (
+        <SetsTable
+          sets={normalizedSets}
+          renderRow={(set, j) => {
+            const s = group.sets[j];
             const hasId = !!s.id;
             return hasId ? (
               <HistorySetRow
                 key={s.id || j}
                 set={{
                   id: s.id!,
-                  weight,
-                  reps,
-                  rest,
+                  weight: set.weight,
+                  reps: set.reps,
+                  rest: set.rest,
                   exerciseId: s.exerciseId,
                   setGroupId: s.setGroupId,
                   order: s.order,
@@ -90,7 +97,7 @@ export const HistoryExerciseGroup = memo(function HistoryExerciseGroup({
                   rir: s.rir,
                   updated_at: s.updated_at,
                 }}
-                className={`py-2 px-3 rounded-lg ${j % 2 === 1 ? 'bg-zinc-900/40' : ''}`}
+                className={`py-1.5 px-3 ${j % 2 === 1 ? 'bg-zinc-800/20' : ''}`}
                 onSave={async (updates) => {
                   const res = await onUpdateSet({
                     row_number: s.id!,
@@ -110,19 +117,25 @@ export const HistoryExerciseGroup = memo(function HistoryExerciseGroup({
                 onDelete={s.id ? () => onDeleteSet(s.id!) : undefined}
               />
             ) : (
-              <SetDisplayRow
+              <div
                 key={j}
-                weight={weight}
-                reps={reps}
-                rest={rest}
-                setType={s.set_type}
-                rpe={s.rpe}
-                rir={s.rir}
-                className={`py-2 px-3 rounded-lg ${j % 2 === 1 ? 'bg-zinc-900/40' : ''}`}
-              />
+                className={`grid grid-cols-[2rem_1fr_1fr_1fr] items-center px-3 py-1.5 text-sm ${
+                  j % 2 === 1 ? 'bg-zinc-800/20' : ''
+                } text-zinc-300`}
+              >
+                <span className="tabular-nums text-zinc-500 text-xs">{j + 1}</span>
+                <span className="text-center">
+                  <span className="tabular-nums font-bold text-zinc-100">{set.weight}</span>
+                  <span className="text-zinc-500 text-xs ml-1">кг</span>
+                </span>
+                <span className="text-center tabular-nums font-medium">{set.reps}</span>
+                <span className="text-right tabular-nums text-zinc-500 text-xs">
+                  {set.rest > 0 ? `${set.rest} м` : '—'}
+                </span>
+              </div>
             );
-          })}
-        </div>
+          }}
+        />
       ) : (
         <div className="text-xs text-zinc-500">Нет подходов</div>
       )}

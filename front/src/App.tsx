@@ -134,7 +134,7 @@ const App = () => {
   }
 
   return (
-    <div className="bg-zinc-950 min-h-screen text-zinc-50 font-sans selection:bg-blue-500/30 pt-24">
+    <div className="bg-zinc-950 min-h-screen text-zinc-50 font-sans selection:bg-blue-500/30">
       <div className="fixed top-2 right-4 z-50">
         <SyncStatusBadge />
       </div>

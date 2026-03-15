@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Plus, Check } from 'lucide-react';
+import { Search, Plus, Check, ChevronDown } from 'lucide-react';
 import { getWeightInputType, calcEffectiveWeight, WEIGHT_FORMULAS } from '../exerciseConfig';
 import { WORKOUT_STORAGE_KEY } from '../constants';
 import { createEmptySet, createSetFromHistory } from '../utils';
@@ -140,6 +140,24 @@ export const WorkoutScreen = ({ initialExercise, allExercises, onBack, increment
       savedSession ? savedSession.sessionData : {}
   );
 
+  const [collapsedExercises, setCollapsedExercises] = useState<Set<string>>(
+    new Set(savedSession?.collapsedExercises || [])
+  );
+
+  const allSetsCompleted = (exId: string) => {
+    const data = sessionData[exId];
+    if (!data || data.sets.length === 0) return false;
+    return data.sets.every(s => s.completed);
+  };
+
+  const toggleCollapse = (exId: string) => {
+    setCollapsedExercises(prev => {
+      const next = new Set(prev);
+      next.has(exId) ? next.delete(exId) : next.add(exId);
+      return next;
+    });
+  };
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addModalAnchorExId, setAddModalAnchorExId] = useState<string | null>(null);
   const [isFinishModalOpen, setIsFinishModalOpen] = useState(false);
@@ -161,11 +179,12 @@ export const WorkoutScreen = ({ initialExercise, allExercises, onBack, increment
               localGroupId,
               activeExercises,
               sessionData,
+              collapsedExercises: [...collapsedExercises],
               timestamp: Date.now()
           };
           localStorage.setItem(WORKOUT_STORAGE_KEY, JSON.stringify(workoutState));
       }
-  }, [localGroupId, activeExercises, sessionData]);
+  }, [localGroupId, activeExercises, sessionData, collapsedExercises]);
 
   const loadExerciseData = async (exId: string) => {
     const { history, note } = await api.getHistory(exId);
@@ -423,6 +442,22 @@ export const WorkoutScreen = ({ initialExercise, allExercises, onBack, increment
         {activeExercises.map(exId => {
             const data = sessionData[exId];
             if (!data) return <div key={exId} className="h-40 bg-zinc-900 rounded-2xl animate-pulse" />;
+            if (collapsedExercises.has(exId)) {
+              const sets = data.sets.filter(s => s.completed);
+              const totalSets = sets.length;
+              const totalReps = sets.reduce((sum, s) => sum + (parseInt(s.reps) || 0), 0);
+              const maxWt = Math.max(0, ...sets.map(s => parseFloat(s.weight) || 0));
+              return (
+                <button key={exId} onClick={() => toggleCollapse(exId)}
+                  className="w-full text-left px-4 py-3 bg-zinc-900/80 border border-zinc-800 rounded-2xl flex items-center justify-between transition-colors hover:bg-zinc-800/60">
+                  <div className="min-w-0">
+                    <span className="font-semibold text-zinc-200 truncate block">{data.exercise.name}</span>
+                    <span className="text-xs text-zinc-500">{totalSets} подх. · {maxWt} кг · {totalReps} повт.</span>
+                  </div>
+                  <ChevronDown className="w-4 h-4 text-zinc-500 flex-shrink-0 ml-2" />
+                </button>
+              );
+            }
             return <WorkoutCard key={exId} exerciseData={data} onAddSet={() => handleAddSet(exId)} onUpdateSet={(sid: string, f: string, v: string | number) => handleUpdateSet(exId, sid, f, v)} onDeleteSet={(sid: string) => handleDeleteSet(exId, sid)} onCompleteSet={(sid: string) => handleCompleteSet(exId, sid)} onToggleEdit={(sid: string) => handleToggleEdit(exId, sid)} onNoteChange={(val: string) => setSessionData(p => ({...p, [exId]: {...p[exId], note: val}}))} onAddSuperset={() => { setAddModalAnchorExId(exId); setIsAddModalOpen(true); }} onEditMetadata={() => setExerciseToEdit(data.exercise)} />;
         })}
         <Button variant="secondary" onClick={() => { setAddModalAnchorExId(null); setIsAddModalOpen(true); }} className="w-full bg-zinc-900/50 border border-dashed border-zinc-700 text-zinc-400 hover:text-blue-500 mt-4 min-h-[48px]">
@@ -465,6 +500,15 @@ export const WorkoutScreen = ({ initialExercise, allExercises, onBack, increment
                       const sharedGroupId = addModalAnchorExId
                         ? (sessionData[addModalAnchorExId]?.setGroupId ?? addModalAnchorExId)
                         : ex.id;
+                      // Auto-collapse completed exercises
+                      const toCollapse = activeExercises.filter(id => allSetsCompleted(id));
+                      if (toCollapse.length > 0) {
+                        setCollapsedExercises(prev => {
+                          const next = new Set(prev);
+                          toCollapse.forEach(id => next.add(id));
+                          return next;
+                        });
+                      }
                       setActiveExercises([...activeExercises, ex.id]);
                       setSessionData(prev => ({
                         ...prev,
